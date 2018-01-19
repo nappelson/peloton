@@ -220,5 +220,65 @@ uint32_t StringFunctions::Length(
   return length;
 }
 
+char * StringFunctions::Upper(
+    executor::ExecutorContext &ctx,
+    const char *str, uint32_t length) {
+
+  // Allocate new memory
+  auto *pool = ctx.GetPool();
+  auto *new_str = reinterpret_cast<char *>(pool->Allocate(length + 1));
+
+  // Perform Upper operation
+  for (uint32_t i=0; i < length; i++) {
+    new_str[i] = std::toupper(str[i], std::locale());
+  }
+
+  return new_str;
+}
+
+char *StringFunctions::Lower(
+    executor::ExecutorContext &ctx,
+    const char *str, uint32_t length) {
+
+  // Allocate new memory
+  auto *pool = ctx.GetPool();
+  auto *new_str = reinterpret_cast<char *>(pool->Allocate(length + 1));
+
+  // Perform Lower operation
+  for (uint32_t i = 0; i < length; i++) {
+    new_str[i] = std::tolower(str[i], std::locale());
+  }
+
+  return new_str;
+}
+
+StringFunctions::StrWithLen StringFunctions::Concat(
+    executor::ExecutorContext &ctx,
+    const char **concat_strs, uint32_t *str_lengths, uint32_t num_strings) {
+    uint32_t total_len = 0;
+
+  // Determine total length
+  for (uint32_t i = 0; i < num_strings; i++) {
+      total_len += str_lengths[i];
+  }
+
+  // Allocate new memory
+  auto *pool = ctx.GetPool();
+  auto *new_str = reinterpret_cast<char *>(pool->Allocate(total_len + 1));
+
+  // Produce concatenated string
+  char *ptr = new_str;
+  for (uint32_t i = 0; i < num_strings; i++)  {
+    const auto *cur_string = concat_strs[i];
+    const auto str_length = str_lengths[i];
+    PL_MEMCPY(ptr, cur_string, str_length);
+    ptr += str_length;
+  }
+
+  return StringFunctions::StrWithLen{new_str, total_len};
+
+}
+
+
 }  // namespace function
 }  // namespace peloton
