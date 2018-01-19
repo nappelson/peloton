@@ -118,7 +118,10 @@ StringFunctions::StrWithLen StringFunctions::Repeat(
     executor::ExecutorContext &ctx, const char *str, uint32_t length,
     uint32_t num_repeat) {
   // Determine the number of bytes we need
+  LOG_INFO("%d", length);
+  LOG_INFO("%s", str);
   uint32_t total_len = ((length - 1) * num_repeat) + 1;
+  LOG_INFO("TOTAL_LEN = %d", total_len);
 
   // Allocate new memory
   auto *pool = ctx.GetPool();
@@ -219,6 +222,74 @@ uint32_t StringFunctions::Length(
   PL_ASSERT(str != nullptr);
   return length;
 }
+
+char *StringFunctions::Upper(
+    executor::ExecutorContext &ctx,
+    const char *str, uint32_t length) {
+
+  // Allocate new memory
+  auto *pool = ctx.GetPool();
+  auto *new_str = reinterpret_cast<char *>(pool->Allocate(length));
+  PL_ASSERT(new_str != nullptr);
+
+  // Perform Upper operation
+  for (uint32_t i=0; i < length; i++) {
+    new_str[i] = std::toupper(str[i], std::locale());
+  }
+  return new_str;
+}
+
+char *StringFunctions::Lower(
+    executor::ExecutorContext &ctx,
+    const char *str, uint32_t length) {
+
+  // Allocate new memory
+  auto *pool = ctx.GetPool();
+  auto *new_str = reinterpret_cast<char *>(pool->Allocate(length));
+  PL_ASSERT(new_str != nullptr);
+
+  // Perform Lower operation
+  for (uint32_t i = 0; i < length; i++) {
+    new_str[i] = std::tolower(str[i], std::locale());
+  }
+
+  return new_str;
+}
+
+StringFunctions::StrWithLen StringFunctions::Concat(
+    executor::ExecutorContext &ctx,
+    const char **concat_strs, uint32_t *str_lengths, uint32_t num_strings) {
+
+  uint32_t total_len = 0;
+  // Determine total length
+  for (uint32_t i = 0; i < num_strings; i++) {
+      if (concat_strs[i] != nullptr) {
+        total_len += str_lengths[i] - 1;
+      }
+  }
+  // Add for Null character
+  total_len += 1;
+  // Allocate new memory
+  auto *pool = ctx.GetPool();
+  auto *new_str = reinterpret_cast<char *>(pool->Allocate(total_len));
+  PL_ASSERT(new_str != nullptr);
+
+  // Produce concatenated string
+  char *ptr = new_str;
+  for (uint32_t i = 0; i < num_strings; i++)  {
+    const auto *cur_string = concat_strs[i];
+    const auto str_length = str_lengths[i];
+    if (cur_string != nullptr) {
+      PL_MEMCPY(ptr, cur_string, str_length - 1);
+      ptr += (str_length - 1);
+    }
+  }
+  new_str[total_len - 1] = '\0';
+
+  return StringFunctions::StrWithLen{new_str, total_len};
+
+}
+
 
 }  // namespace function
 }  // namespace peloton

@@ -314,6 +314,60 @@ TEST_F(StringFunctionsTests, LengthTest) {
   EXPECT_TRUE(result.IsNull());
 }
 
+TEST_F(StringFunctionsTests, UpperTest) {
+  const std::string s1 = "abc";
+  const std::string s1_upper = StringUtil::Upper(s1);
+  EXPECT_STREQ(function::StringFunctions::Upper(
+      GetExecutorContext(), s1.c_str(), s1.size()), s1_upper.c_str());
+
+  const std::string s2 = "";
+  const std::string s2_upper = StringUtil::Upper(s2);
+  EXPECT_STREQ(function::StringFunctions::Upper(
+      GetExecutorContext(), s2.c_str(), s2.size()), s2_upper.c_str());
+
+  const std::string s3 = "aBc";
+  const std::string s3_upper = StringUtil::Upper(s3);
+  EXPECT_STREQ(function::StringFunctions::Upper(
+      GetExecutorContext(), s3.c_str(), s3.size()), s3_upper.c_str());
+}
+
+TEST_F(StringFunctionsTests, LowerTest) {
+  const std::string s1 = "ABC";
+  const std::string s1_lower = StringUtil::Lower(s1);
+  EXPECT_STREQ(function::StringFunctions::Lower(
+      GetExecutorContext(), s1.c_str(), s1.size()), s1_lower.c_str());
+
+  const std::string s2 = "";
+  const std::string s2_lower = StringUtil::Lower(s2);
+  EXPECT_STREQ(function::StringFunctions::Lower(
+      GetExecutorContext(), s2.c_str(), s2.size()), s2_lower.c_str());
+
+  const std::string s3 = "AbC";
+  const std::string s3_lower = StringUtil::Lower(s3);
+  EXPECT_STREQ(function::StringFunctions::Lower(
+      GetExecutorContext(), s3.c_str(), s3.size()), s3_lower.c_str());
+}
+
+TEST_F(StringFunctionsTests, ConcatTest) {
+  const char *strings1[] = {
+      "A", "B", "C"
+  };
+  uint32_t lengths1[] = {1, 1, 1};
+  const std::string concat_1 = "ABC";
+  auto result1 = function::StringFunctions::Concat(
+      GetExecutorContext(), strings1, lengths1, 3);
+  EXPECT_STREQ(concat_1.c_str(), result1.str);
+
+  const char *strings2[] = {
+      "", "BCD", "X"
+  };
+  uint32_t lengths2[] = {0, 3, 1};
+  const std::string concat_2 = "BCDX";
+  auto result2 = function::StringFunctions::Concat(
+      GetExecutorContext(), strings2, lengths2, 3);
+  EXPECT_STREQ(concat_2.c_str(), result2.str);
+}
+
 TEST_F(StringFunctionsTests, CodegenSubstrTest) {
   const std::string message = "1234567";
   int from = 1;
@@ -348,6 +402,7 @@ TEST_F(StringFunctionsTests, CodegenSubstrTest) {
   EXPECT_EQ(0, res.length);
   EXPECT_EQ(nullptr, res.str);
 }
+
 
 }  // namespace test
 }  // namespace peloton

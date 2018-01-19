@@ -116,21 +116,24 @@ type::Value OldEngineStringFunctions::Repeat(
   if (args[0].IsNull() || args[1].IsNull()) {
     return type::ValueFactory::GetNullValueByType(type::TypeId::VARCHAR);
   }
-  std::string str = args[0].ToString();
+//  std::string str = args[0].ToString();
   int32_t num = args[1].GetAs<int32_t>();
-
-  std::string ret = "";
-
-  while (num > 0) {
-    if (num % 2) {
-      ret += str;
-    }
-    if (num > 1) {
-      str += str;
-    }
-    num >>= 1;
-  }
-  return (type::ValueFactory::GetVarcharValue(ret));
+//
+//  std::string ret = "";
+//
+//  while (num > 0) {
+//    if (num % 2) {
+//      ret += str;
+//    }
+//    if (num > 1) {
+//      str += str;
+//    }
+//    num >>= 1;
+//  }
+  executor::ExecutorContext ctx{nullptr};
+  auto ret = StringFunctions::Repeat(ctx, args[0].GetAs<const char *>(), args[0].GetLength(), num);
+  return type::ValueFactory::GetVarcharValue(std::string(ret.str));
+//  return (type::ValueFactory::GetVarcharValue(ret));
 }
 
 // Replace all occurrences in string of substring from with substring to
@@ -226,13 +229,25 @@ type::Value OldEngineStringFunctions::Length(
 }
 
 type::Value OldEngineStringFunctions::Upper(
-    UNUSED_ATTRIBUTE const std::vector<type::Value> &args) {
-  throw Exception{"Upper not implemented in old engine"};
+    const std::vector<type::Value> &args) {
+  LOG_INFO("HERE");
+//  LOG_INFO("%s", args[0].GetAs<const char *>());
+  if (args[0].IsNull()) {
+    return type::ValueFactory::GetNullValueByType(type::TypeId::VARCHAR);
+  }
+  executor::ExecutorContext ctx{nullptr};
+  auto ret= StringFunctions::Upper(ctx, args[0].GetAs<const char *>(), args[0].GetLength());
+  return type::ValueFactory::GetVarcharValue(ret);
 }
 
 type::Value OldEngineStringFunctions::Lower(
-    UNUSED_ATTRIBUTE const std::vector<type::Value> &args) {
-  throw Exception{"Lower not implemented in old engine"};
+    const std::vector<type::Value> &args) {
+  executor::ExecutorContext ctx{nullptr};
+  if (args[0].IsNull()) {
+    return type::ValueFactory::GetNullValueByType(type::TypeId::VARCHAR);
+  }
+  const char *ret = StringFunctions::Lower(ctx, args[0].GetAs<const char *>(), args[0].GetLength());
+  return type::ValueFactory::GetVarcharValue(ret);
 }
 
 }  // namespace function
