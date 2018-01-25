@@ -1040,16 +1040,17 @@ void Catalog::InitializeFunctions() {
                                     function::OldEngineStringFunctions::Like},
           txn);
       AddBuiltinFunction(
-          "upper", {type::TypeId::VARCHAR},
-          type::TypeId::VARCHAR, internal_lang, "Upper",
-          function::BuiltInFuncType{OperatorId::Upper, function::OldEngineStringFunctions::Upper},
+          "upper", {type::TypeId::VARCHAR}, type::TypeId::VARCHAR,
+          internal_lang, "Upper",
+          function::BuiltInFuncType{OperatorId::Upper,
+                                    function::OldEngineStringFunctions::Upper},
           txn);
       AddBuiltinFunction(
-          "lower", {type::TypeId::VARCHAR},
-          type::TypeId::VARCHAR, internal_lang, "Lower",
-          function::BuiltInFuncType{OperatorId::Lower, function::OldEngineStringFunctions::Lower},
+          "lower", {type::TypeId::VARCHAR}, type::TypeId::VARCHAR,
+          internal_lang, "Lower",
+          function::BuiltInFuncType{OperatorId::Lower,
+                                    function::OldEngineStringFunctions::Lower},
           txn);
-
 
       /**
        * decimal functions

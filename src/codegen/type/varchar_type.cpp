@@ -409,11 +409,11 @@ struct Upper : public TypeSystem::UnaryOperatorHandleNull {
 
   Value Impl(CodeGen &codegen, const Value &val,
              const TypeSystem::InvocationContext &ctx) const override {
-    llvm::Value *ret = codegen.Call(StringFunctionsProxy::Upper,
-                                    {ctx.executor_context, val.GetValue(), val.GetLength()});
+    llvm::Value *ret =
+        codegen.Call(StringFunctionsProxy::Upper,
+                     {ctx.executor_context, val.GetValue(), val.GetLength()});
     return Value{Varchar::Instance(), ret, val.GetLength()};
   }
-
 };
 
 struct Lower : public TypeSystem::UnaryOperatorHandleNull {
@@ -428,11 +428,11 @@ struct Lower : public TypeSystem::UnaryOperatorHandleNull {
   Value Impl(CodeGen &codegen, const Value &val,
              const TypeSystem::InvocationContext &ctx) const override {
     llvm::Value *executor_ctx = ctx.executor_context;
-    llvm::Value *ret = codegen.Call(StringFunctionsProxy::Lower,
-                                    {executor_ctx, val.GetValue(), val.GetLength()});
+    llvm::Value *ret =
+        codegen.Call(StringFunctionsProxy::Lower,
+                     {executor_ctx, val.GetValue(), val.GetLength()});
     return Value{Varchar::Instance(), ret, val.GetLength()};
   }
-
 };
 
 /**
@@ -591,11 +591,10 @@ RTrim kRTrim;
 Repeat kRepeat;
 Concat kConcat;
 std::vector<TypeSystem::BinaryOpInfo> kBinaryOperatorTable = {
-    {OperatorId::Like, kLike}, {OperatorId::DateTrunc, kDateTrunc},
+    {OperatorId::Like, kLike},         {OperatorId::DateTrunc, kDateTrunc},
     {OperatorId::DatePart, kDatePart}, {OperatorId::BTrim, kBTrim},
-    {OperatorId::LTrim, kLTrim}, {OperatorId::RTrim, kRTrim},
-    {OperatorId::Repeat, kRepeat}, {OperatorId::Concat, kConcat}
-};
+    {OperatorId::LTrim, kLTrim},       {OperatorId::RTrim, kRTrim},
+    {OperatorId::Repeat, kRepeat},     {OperatorId::Concat, kConcat}};
 
 // Nary operations
 Substr kSubstr;

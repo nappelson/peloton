@@ -76,16 +76,17 @@ class StringFunctions {
                          uint32_t length);
 
   // Upper
-  static char * Upper(executor::ExecutorContext &ctx, const char *str,
-                          uint32_t length);
+  static char *Upper(executor::ExecutorContext &ctx, const char *str,
+                     uint32_t length);
 
   // Lower
-  static char * Lower(executor::ExecutorContext &ctx, const char *str,
-                          uint32_t length);
+  static char *Lower(executor::ExecutorContext &ctx, const char *str,
+                     uint32_t length);
 
   // Concat
-  static StrWithLen Concat(executor::ExecutorContext &ctx, const char **concat_strs,
-                           uint32_t *str_lengths, uint32_t num_strings);
+  static StrWithLen Concat(executor::ExecutorContext &ctx,
+                           const char **concat_strs,
+                           const uint32_t *str_lengths, uint32_t num_strings);
 };
 
 }  // namespace function

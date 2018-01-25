@@ -30,7 +30,6 @@ DEFINE_METHOD(peloton::function, StringFunctions, Upper);
 DEFINE_METHOD(peloton::function, StringFunctions, Lower);
 DEFINE_METHOD(peloton::function, StringFunctions, Concat);
 
-
 // Trim-related functions
 DEFINE_METHOD(peloton::function, StringFunctions, BTrim);
 DEFINE_METHOD(peloton::function, StringFunctions, Trim);
