@@ -12,11 +12,21 @@
 
 #pragma once
 
+#include <atomic>
+#include <memory>
 #include <stdlib.h>
 #include <strings.h>
+#include <vector>
+
+#include "common/logger.h"
+#include "common/macros.h"
 
 namespace peloton {
 namespace index {
+
+// This is the value we use in epoch manager to make sure
+// no thread sneaking in while GC decision is being made
+#define MAX_THREAD_COUNT ((int)0x7FFFFFFF)
 
 /*
  * SKIPLIST_TEMPLATE_ARGUMENTS - Save some key strokes
@@ -25,49 +35,11 @@ namespace index {
   template <typename KeyType, typename ValueType, typename KeyComparator, \
             typename KeyEqualityChecker, typename ValueEqualityChecker>
 
-// KeyType-ValueType pair
-using KeyValuePair = std::pair<KeyType, ValueType>;
-
-///////////////////////////////////////////////////////////////////
-// Key Comparison Member Functions
-///////////////////////////////////////////////////////////////////
-
-inline bool key_cmp_less(const KeyType &key1, const KeyType &key2) const {
-  return key_cmp_obj_(key1, key2);
-}
-
-inline bool key_cmp_equal(const KeyType &key1, const KeyType &key2) const {
-  return key_eq_obj_(key1, key2);
-}
-
-inline bool key_cmp_greater_equal(const KeyType &key1,
-                                  const KeyType &key2) const {
-  return !key_cmp_less(key1, key2);
-}
-
-inline bool key_cmp_greater(const KeyType &key1, const KeyType &key2) const {
-  return key_cmp_less(key2, key1);
-}
-
-inline bool key_cmp_less_equal(const KeyType &key1, const KeyType &key2) const {
-  return !key_cmp_greater(key1, key2);
-}
-
-///////////////////////////////////////////////////////////////////
-// Value Comparison Member
-///////////////////////////////////////////////////////////////////
-
-inline bool value_cmp_equal(const ValueType &value1,
-                            const ValueType &value2) const {
-  return value_eq_obj_(value1, value2);
-}
-
 template <typename KeyType, typename ValueType, typename KeyComparator,
           typename KeyEqualityChecker, typename ValueEqualityChecker>
 class SkipList {
  public:
   explicit inline SkipList(
-      bool start_gc_thread = true,
       KeyComparator p_key_cmp_obj = KeyComparator{},
       KeyEqualityChecker p_key_eq_obj = KeyEqualityChecker{},
       ValueEqualityChecker p_value_eq_obj = ValueEqualityChecker{})
@@ -96,13 +68,6 @@ class SkipList {
   bool exists(const KeyType &key) const;
 
  private:
-  KeyComparator key_cmp_obj_;
-  KeyEqualityChecker key_eq_obj_;
-  ValueEqualityChecker value_eq_obj_;
-
-  unsigned int max_level_;
-  node *root_;
-
   struct node {
     // The key
     KeyType key_;
@@ -117,6 +82,13 @@ class SkipList {
     // TODO (steal last bit from next pointer to see deleted bit)
     bool deleted;
   };
+
+  KeyComparator key_cmp_obj_;
+  KeyEqualityChecker key_eq_obj_;
+  ValueEqualityChecker value_eq_obj_;
+
+  unsigned int max_level_;
+  node *root_;
 
   inline unsigned int generate_level() const {
     return ffs(rand() & ((1 << max_level_) - 1));
@@ -138,6 +110,9 @@ class SkipList {
   }
 
  public:
+  /*
+   * Iterator used for traversing all nodes of skiplist (used at base level)
+   */
   class ForwardIterator {
    private:
     node *curr_node_;
@@ -146,7 +121,7 @@ class SkipList {
     /*
      * Default Constructor
      */
-    ForwardIterator() : kv_p{nullptr} {};
+    ForwardIterator(){};
 
     /*
      * Constructor given a SkipList
@@ -216,12 +191,12 @@ class SkipList {
     * operator * - Return the value reference currently pointed to by this
     * iterator
     */
-    inline const node &operator*() { return *node_; }
+    inline const node &operator*() { return *curr_node_; }
 
     /*
      * operator -> - Return the value pointer pointed to by this iterator
      */
-    inline const node *operator->() { return &*node_; }
+    inline const node *operator->() { return &*curr_node_; }
 
    private:
     /*
@@ -229,6 +204,41 @@ class SkipList {
      */
     void step_forward();
   };
+
+  ///////////////////////////////////////////////////////////////////
+  // Key Comparison Member Functions
+  ///////////////////////////////////////////////////////////////////
+ private:
+  inline bool key_cmp_less(const KeyType &key1, const KeyType &key2) const {
+    return key_cmp_obj_(key1, key2);
+  }
+
+  inline bool key_cmp_equal(const KeyType &key1, const KeyType &key2) const {
+    return key_eq_obj_(key1, key2);
+  }
+
+  inline bool key_cmp_greater_equal(const KeyType &key1,
+                                    const KeyType &key2) const {
+    return !key_cmp_less(key1, key2);
+  }
+
+  inline bool key_cmp_greater(const KeyType &key1, const KeyType &key2) const {
+    return key_cmp_less(key2, key1);
+  }
+
+  inline bool key_cmp_less_equal(const KeyType &key1,
+                                 const KeyType &key2) const {
+    return !key_cmp_greater(key1, key2);
+  }
+
+  ///////////////////////////////////////////////////////////////////
+  // Value Comparison Member
+  ///////////////////////////////////////////////////////////////////
+
+  inline bool value_cmp_equal(const ValueType &value1,
+                              const ValueType &value2) const {
+    return value_eq_obj_(value1, value2);
+  }
 };
 
 }  // namespace index
