@@ -39,6 +39,10 @@ namespace index {
 template <typename KeyType, typename ValueType, typename KeyComparator,
           typename KeyEqualityChecker, typename ValueEqualityChecker>
 class SkipList {
+ private:
+  // Forward Declarations
+  class EpochManager;
+
  public:
   explicit inline SkipList(
       KeyComparator p_key_cmp_obj = KeyComparator{},
@@ -46,7 +50,8 @@ class SkipList {
       ValueEqualityChecker p_value_eq_obj = ValueEqualityChecker{})
       : key_cmp_obj_{p_key_cmp_obj},
         key_eq_obj_{p_key_eq_obj},
-        value_eq_obj_{p_value_eq_obj} {}
+        value_eq_obj_{p_value_eq_obj},
+        epoch_manager_{} {}
 
   /*
    * Insert
@@ -68,6 +73,11 @@ class SkipList {
    */
   bool exists(const KeyType &key) const;
 
+  /*
+   * GetEpochManager()
+   */
+  EpochManager &GetEpochManager() { return epoch_manager_; }
+
  private:
   struct node {
     // The key
@@ -87,6 +97,8 @@ class SkipList {
   KeyComparator key_cmp_obj_;
   KeyEqualityChecker key_eq_obj_;
   ValueEqualityChecker value_eq_obj_;
+
+  EpochManager epoch_manager_;
 
   unsigned int max_level_;
   node *root_;
@@ -251,29 +263,30 @@ class SkipList {
 
    public:
     struct GarbageNode {
-      std::unique_ptr<GarbageNode> next_ptr;
+      GarbageNode *next_ptr;
       SkipList::node *node;
     };
 
     struct EpochNode {
+      EpochNode *next_ptr;
       std::atomic<int> active_thread_count;
-      std::atomic<std::unique_ptr<GarbageNode>> garbage_list_ptr;
-      std::unique_ptr<EpochNode> next_ptr;
+      std::atomic<GarbageNode *> garbage_list_ptr;
     };
-
-    using EpochNodeUniquePtr = std::unique_ptr<EpochNode>;
-    using GarbageNodeUniquePtr = std::unique_ptr<GarbageNode>;
 
     /*
      * Constructor
      */
     EpochManager() {
-      current_epoch_ptr_ = new EpochNode{};
-      current_epoch_ptr_->active_thread_count = 0;
-      current_epoch_ptr_->garbage_list_ptr = nullptr;
-      current_epoch_ptr_->next_ptr = nullptr;
+      // Construct the first epoch node
+      auto epoch_node = new EpochNode{};
+      epoch_node->active_thread_count = 0;
+      epoch_node->garbage_list_ptr = nullptr;
 
-      head_epoch_ptr_ = std::move(current_epoch_ptr_);
+      cur_epoch_node_ptr_ = epoch_node;
+      head_epoch_node_ptr_ = cur_epoch_node_ptr_;
+      // Add node to the head of epoch node list
+      //      epoch_node_list_.push_front(epoch_node);
+      //      cur_epoch_node_itr_ = epoch_node_list_.begin();
 
       thread_ptr_ = nullptr;
       exited_flag_.store(false);
@@ -294,12 +307,12 @@ class SkipList {
         LOG_TRACE("Thread Stops");
       }
 
-      current_epoch_ptr_ = nullptr;
+      cur_epoch_node_ptr_ = nullptr;
 
       ClearEpoch();
 
-      if (head_epoch_ptr_ != nullptr) {
-        for (auto epoch_node_ptr = head_epoch_ptr_.get();
+      if (head_epoch_node_ptr_ != nullptr) {
+        for (auto epoch_node_ptr = head_epoch_node_ptr_;
              epoch_node_ptr != nullptr;
              epoch_node_ptr = epoch_node_ptr->next_ptr) {
           LOG_DEBUG("Active thread count: %d",
@@ -311,46 +324,86 @@ class SkipList {
         ClearEpoch();
       }
 
-      PL_ASSERT(head_epoch_ptr_ == nullptr);
+      PL_ASSERT(head_epoch_node_ptr_ != nullptr);
       LOG_TRACE("GC has finished freeing all garbage nodes");
     }
 
+    /*
+     * CreateNewEpoch()
+     */
     void CreateNewEpoch() {
-      EpochNodeUniquePtr epoch_node_ptr(new EpochNode{});
+      auto epoch_node_ptr = new EpochNode{};
+      LOG_TRACE("created epoch node ptr");
 
       epoch_node_ptr->active_thread_count = 0;
       epoch_node_ptr->garbage_list_ptr = nullptr;
 
-      epoch_node_ptr->next_p = nullptr;
+      LOG_TRACE("Initialized epoch node");
 
-      current_epoch_ptr_->next_p = std::move(epoch_node_ptr);
-      current_epoch_ptr_ = std::move(epoch_node_ptr);
+      epoch_node_ptr->next_ptr = nullptr;
+      cur_epoch_node_ptr_->next_ptr = epoch_node_ptr;
+
+      LOG_TRACE("DID THIS");
+      cur_epoch_node_ptr_ = epoch_node_ptr;
+
+      LOG_TRACE("Set current epoch node to new epoch");
     }
 
+    /*
+     * JoinEpoch()
+     */
     inline EpochNode *JoinEpoch() {
       while (1) {
         const auto prev_count =
-            current_epoch_ptr_->active_thread_count.fetch_add(1);
+            cur_epoch_node_ptr_->active_thread_count.fetch_add(1);
 
         if (prev_count < 0) {
-          current_epoch_ptr_->active_thread_count.fetch_sub(1);
+          cur_epoch_node_ptr_->active_thread_count.fetch_sub(1);
         }
-        return current_epoch_ptr_.get();
+        return cur_epoch_node_ptr_.get();
       }
     }
 
-    inline void LeaveEpoch(EpochNodeUniquePtr epoch_ptr) {
+    /*
+     * AddGarbageNode()
+     */
+    void AddGarbageNode(const node *node_ptr) {
+      GarbageNode *garbage_node_ptr = new GarbageNode();
+      garbage_node_ptr->node_ptr = node_ptr;
+      garbage_node_ptr->next_ptr = cur_epoch_node_ptr_->garbage_list_ptr.load();
+
+      while (1) {
+        bool ret =
+            cur_epoch_node_ptr_->garbage_list_ptr.compare_exchange_strong(
+                garbage_node_ptr->next_ptr, garbage_node_ptr);
+
+        if (ret) {
+          break;
+        } else {
+          LOG_TRACE("Add garbage node CAS failed. Retry");
+        }
+      }
+    }
+
+    /*
+     * LeaveEpoch()
+     */
+    inline void LeaveEpoch(EpochNode *epoch_ptr) {
       epoch_ptr->active_thread_count.fetch_sub(1);
     }
 
+    /*
+     * ClearEpoch()
+     */
     void ClearEpoch() {
       while (1) {
-        if (head_epoch_ptr_ == current_epoch_ptr_) {
+        if (head_epoch_node_ptr_ == cur_epoch_node_ptr_) {
           LOG_TRACE("Current epoch is head epoch. Do not clean");
           break;
         }
 
-        int active_thread_count = head_epoch_ptr_->active_thread_count.load();
+        int active_thread_count =
+            head_epoch_node_ptr_->active_thread_count.load();
         PL_ASSERT(active_thread_count >= 0);
 
         if (active_thread_count != 0) {
@@ -358,38 +411,65 @@ class SkipList {
           break;
         }
 
-        if (head_epoch_ptr_->active_thread_count.fetch_sub(MAX_THREAD_COUNT) >
-            0) {
+        if (head_epoch_node_ptr_->active_thread_count.fetch_sub(
+                MAX_THREAD_COUNT) > 0) {
           LOG_TRACE(
               "Some thread sneaks in after we have decided to clean. Return");
 
-          head_epoch_ptr_->active_thread_count.fetch_add(MAX_THREAD_COUNT);
+          head_epoch_node_ptr_->active_thread_count.fetch_add(MAX_THREAD_COUNT);
           break;
         }
 
-        const GarbageNodeUniquePtr next_garbage_node_ptr = nullptr;
-        for (auto garbage_node_ptr = head_epoch_ptr_->garbage_list_ptr.load();
+        GarbageNode *next_garbage_node_ptr = nullptr;
+        for (auto garbage_node_ptr =
+                 head_epoch_node_ptr_->garbage_list_ptr.load();
              garbage_node_ptr != nullptr;
-             garbage_node_ptr = std::move(next_garbage_node_ptr)) {
-          next_garbage_node_ptr = std::move(garbage_node_ptr->next_ptr);
+             garbage_node_ptr = next_garbage_node_ptr) {
+          next_garbage_node_ptr = garbage_node_ptr->next_ptr;
           // TODO free the garbage node node here yo
-          garbage_node_ptr.reset();
+          delete garbage_node_ptr;
         }
-        auto next_epoch_node_ptr = std::move(head_epoch_ptr_->next_ptr);
-        // TODO delete the current garbage node ptr? is this needed?
-        head_epoch_ptr_.reset();
-        head_epoch_ptr_ = std::move(next_epoch_node_ptr);
+        auto next_epoch_node_ptr = head_epoch_node_ptr_->next_ptr;
+        delete head_epoch_node_ptr_;
+
+        head_epoch_node_ptr_ = next_epoch_node_ptr;
       }
     }
 
+    /*
+     * PerformGarbageCollection()
+     */
     void PerformGarbageCollection() {
       ClearEpoch();
       CreateNewEpoch();
     }
 
+    /*
+     * ThreadFunc()
+     */
+    void ThreadFunc() {
+      while (!exited_flag_.load()) {
+        PerformGarbageCollection();
+
+        // Sleep
+        std::chrono::milliseconds duration(GC_INTERVAL);
+        std::this_thread::sleep_for(duration);
+      }
+      LOG_TRACE("exit flag is true; thread return");
+    }
+
+    /*
+     * StartThread()
+     */
+    void StartThread() {
+      thread_ptr_ = new std::thread{[this]() { this->ThreadFunc(); }};
+    }
+
    private:
-    EpochNodeUniquePtr head_epoch_ptr_;
-    EpochNodeUniquePtr current_epoch_ptr_;
+    EpochNode *cur_epoch_node_ptr_;
+    EpochNode *head_epoch_node_ptr_;
+    //    std::forward_list<EpochNode *> epoch_node_list_;
+    //    std::forward_list<EpochNode *>::iterator cur_epoch_node_itr_;
     std::atomic<bool> exited_flag_;
 
     // If GC is done with external thread then this should be set

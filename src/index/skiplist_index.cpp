@@ -27,7 +27,9 @@ SKIPLIST_INDEX_TYPE::SkipListIndex(IndexMetadata *metadata)
       // Key "less than" relation comparator
       comparator{},
       // Key equality checker
-      equals{} {
+      equals{},
+
+      container{comparator, equals} {
   // TODO: Add your implementation here
   return;
 }
