@@ -13,6 +13,7 @@
 #pragma once
 
 #include <atomic>
+#include <forward_list>
 #include <memory>
 #include <stdlib.h>
 #include <strings.h>
@@ -42,6 +43,7 @@ class SkipList {
  private:
   // Forward Declarations
   class EpochManager;
+  struct Node;
 
  public:
   explicit inline SkipList(
@@ -56,38 +58,61 @@ class SkipList {
   /*
    * Insert
    */
-  bool insert(const KeyType &key, const ValueType &value);
+  bool Insert(const KeyType &key, const ValueType &value);
 
   /*
    * Delete
    */
-  bool remove(const KeyType &key);
+  bool Remove(const KeyType &key);
 
   /*
    * Search
    */
-  const ValueType *search(const KeyType &key) const;
+  const ValueType *Search(const KeyType &key) const;
 
   /*
    * Exists
    */
-  bool exists(const KeyType &key) const;
+  bool Exists(const KeyType &key) const;
+
+  /*
+   * NeedGarbageCollection() - Whether the skiplist needs gaarbage collection or
+   * not
+   */
+  bool NeedGarbageCollection() { return true; }
+
+  /*
+   * PerformGarbageCollection() - Interface to epoch manager's garbage
+   * collection method
+   */
+  void PerformGarbageCollection() { epoch_manager_.PerformGarbageCollection(); }
 
   /*
    * GetEpochManager()
    */
   EpochManager &GetEpochManager() { return epoch_manager_; }
 
+  /*
+   * CreateNode() TODO: remove (only used for testing purposes right now)
+   */
+  Node *CreateNode() {
+    Node *cur_node = new Node{};
+    cur_node->key = KeyType{};
+    cur_node->value = ValueType{};
+    cur_node->deleted = false;
+    return cur_node;
+  }
+
  private:
-  struct node {
+  struct Node {
     // The key
-    KeyType key_;
+    KeyType key;
 
     // The value
-    ValueType value_;
+    ValueType value;
 
     // For each level, store the next node
-    std::vector<node *> next_node;
+    std::vector<Node *> next_node;
 
     // Deleted bit for this node (logically removed)
     // TODO (steal last bit from next pointer to see deleted bit)
@@ -101,7 +126,7 @@ class SkipList {
   EpochManager epoch_manager_;
 
   unsigned int max_level_;
-  node *root_;
+  Node *root_;
 
   inline unsigned int generate_level() const {
     return ffs(rand() & ((1 << max_level_) - 1));
@@ -128,7 +153,7 @@ class SkipList {
    */
   class ForwardIterator {
    private:
-    node *curr_node_;
+    Node *curr_node_;
 
    public:
     /*
@@ -204,12 +229,12 @@ class SkipList {
     * operator * - Return the value reference currently pointed to by this
     * iterator
     */
-    inline const node &operator*() { return *curr_node_; }
+    inline const Node &operator*() { return *curr_node_; }
 
     /*
      * operator -> - Return the value pointer pointed to by this iterator
      */
-    inline const node *operator->() { return &*curr_node_; }
+    inline const Node *operator->() { return &*curr_node_; }
 
    private:
     /*
@@ -264,14 +289,31 @@ class SkipList {
    public:
     struct GarbageNode {
       GarbageNode *next_ptr;
-      SkipList::node *node;
+      const SkipList::Node *node_ptr;
     };
 
     struct EpochNode {
-      EpochNode *next_ptr;
       std::atomic<int> active_thread_count;
       std::atomic<GarbageNode *> garbage_list_ptr;
     };
+
+    void PrintEpochNodeList() {
+      auto count = 1;
+      for (auto node_itr = epoch_node_list_.begin();
+           node_itr != epoch_node_list_.end(); node_itr++) {
+        auto current_node = *node_itr;
+        LOG_INFO("\n Epoch Node: %d\n Pointer: %p\n Thread Count: %d", count,
+                 (void *)current_node,
+                 current_node->active_thread_count.load());
+        count++;
+      }
+    }
+
+    std::forward_list<EpochNode *> &GetEpochNodeList() {
+      return epoch_node_list_;
+    }
+
+    EpochNode *GetCurrentEpochNode() { return *cur_epoch_node_itr_; }
 
     /*
      * Constructor
@@ -282,11 +324,9 @@ class SkipList {
       epoch_node->active_thread_count = 0;
       epoch_node->garbage_list_ptr = nullptr;
 
-      cur_epoch_node_ptr_ = epoch_node;
-      head_epoch_node_ptr_ = cur_epoch_node_ptr_;
       // Add node to the head of epoch node list
-      //      epoch_node_list_.push_front(epoch_node);
-      //      cur_epoch_node_itr_ = epoch_node_list_.begin();
+      epoch_node_list_.push_front(epoch_node);
+      cur_epoch_node_itr_ = epoch_node_list_.begin();
 
       thread_ptr_ = nullptr;
       exited_flag_.store(false);
@@ -300,31 +340,34 @@ class SkipList {
       // Set stop flag and let thread terminate
       exited_flag_.store(true);
 
-      if (thread_ptr_ == nullptr) {
+      if (thread_ptr_ != nullptr) {
         LOG_TRACE("Waiting for thread");
         thread_ptr_->join();
         thread_ptr_.reset();
         LOG_TRACE("Thread Stops");
       }
 
-      cur_epoch_node_ptr_ = nullptr;
+      cur_epoch_node_itr_ = epoch_node_list_.end();
 
       ClearEpoch();
 
-      if (head_epoch_node_ptr_ != nullptr) {
-        for (auto epoch_node_ptr = head_epoch_node_ptr_;
-             epoch_node_ptr != nullptr;
-             epoch_node_ptr = epoch_node_ptr->next_ptr) {
+      if (!epoch_node_list_.empty()) {
+        for (auto epoch_node_itr = epoch_node_list_.begin();
+             epoch_node_itr != epoch_node_list_.end(); epoch_node_itr++) {
+          auto epoch_node_ptr = *epoch_node_itr;
           LOG_DEBUG("Active thread count: %d",
                     epoch_node_ptr->active_thread_count.load());
+
+          epoch_node_ptr->active_thread_count.load();
           epoch_node_ptr->active_thread_count = 0;
         }
 
+        // TODO do we really need to do this?
         LOG_DEBUG("Retry cleaning");
         ClearEpoch();
       }
 
-      PL_ASSERT(head_epoch_node_ptr_ != nullptr);
+      PL_ASSERT(epoch_node_list_.empty());
       LOG_TRACE("GC has finished freeing all garbage nodes");
     }
 
@@ -340,42 +383,44 @@ class SkipList {
 
       LOG_TRACE("Initialized epoch node");
 
-      epoch_node_ptr->next_ptr = nullptr;
-      cur_epoch_node_ptr_->next_ptr = epoch_node_ptr;
-
-      LOG_TRACE("DID THIS");
-      cur_epoch_node_ptr_ = epoch_node_ptr;
+      epoch_node_list_.insert_after(cur_epoch_node_itr_, epoch_node_ptr);
+      cur_epoch_node_itr_++;
 
       LOG_TRACE("Set current epoch node to new epoch");
     }
 
     /*
-     * JoinEpoch()
+     * JoinEpoch() - Let the current thread join this epoch
      */
     inline EpochNode *JoinEpoch() {
+      // We must make sure the epoch we join and the epoch we
+      // return are the same one because the current point
+      // could change in the middle of this function
       while (1) {
+        auto &cur_epoch_node = *cur_epoch_node_itr_;
+
         const auto prev_count =
-            cur_epoch_node_ptr_->active_thread_count.fetch_add(1);
+            cur_epoch_node->active_thread_count.fetch_add(1);
 
         if (prev_count < 0) {
-          cur_epoch_node_ptr_->active_thread_count.fetch_sub(1);
+          cur_epoch_node->active_thread_count.fetch_sub(1);
         }
-        return cur_epoch_node_ptr_.get();
+        return *cur_epoch_node_itr_;
       }
     }
 
     /*
      * AddGarbageNode()
      */
-    void AddGarbageNode(const node *node_ptr) {
-      GarbageNode *garbage_node_ptr = new GarbageNode();
+    void AddGarbageNode(const Node *node_ptr) {
+      auto cur_epoch_node = *cur_epoch_node_itr_;
+      GarbageNode *garbage_node_ptr = new GarbageNode;
       garbage_node_ptr->node_ptr = node_ptr;
-      garbage_node_ptr->next_ptr = cur_epoch_node_ptr_->garbage_list_ptr.load();
+      garbage_node_ptr->next_ptr = cur_epoch_node->garbage_list_ptr.load();
 
       while (1) {
-        bool ret =
-            cur_epoch_node_ptr_->garbage_list_ptr.compare_exchange_strong(
-                garbage_node_ptr->next_ptr, garbage_node_ptr);
+        bool ret = cur_epoch_node->garbage_list_ptr.compare_exchange_strong(
+            garbage_node_ptr->next_ptr, garbage_node_ptr);
 
         if (ret) {
           break;
@@ -397,13 +442,13 @@ class SkipList {
      */
     void ClearEpoch() {
       while (1) {
-        if (head_epoch_node_ptr_ == cur_epoch_node_ptr_) {
+        if (epoch_node_list_.begin() == cur_epoch_node_itr_) {
           LOG_TRACE("Current epoch is head epoch. Do not clean");
           break;
         }
 
         int active_thread_count =
-            head_epoch_node_ptr_->active_thread_count.load();
+            epoch_node_list_.front()->active_thread_count.load();
         PL_ASSERT(active_thread_count >= 0);
 
         if (active_thread_count != 0) {
@@ -411,28 +456,27 @@ class SkipList {
           break;
         }
 
-        if (head_epoch_node_ptr_->active_thread_count.fetch_sub(
+        if (epoch_node_list_.front()->active_thread_count.fetch_sub(
                 MAX_THREAD_COUNT) > 0) {
           LOG_TRACE(
               "Some thread sneaks in after we have decided to clean. Return");
 
-          head_epoch_node_ptr_->active_thread_count.fetch_add(MAX_THREAD_COUNT);
+          epoch_node_list_.front()->active_thread_count.fetch_add(
+              MAX_THREAD_COUNT);
           break;
         }
 
         GarbageNode *next_garbage_node_ptr = nullptr;
         for (auto garbage_node_ptr =
-                 head_epoch_node_ptr_->garbage_list_ptr.load();
+                 epoch_node_list_.front()->garbage_list_ptr.load();
              garbage_node_ptr != nullptr;
              garbage_node_ptr = next_garbage_node_ptr) {
           next_garbage_node_ptr = garbage_node_ptr->next_ptr;
-          // TODO free the garbage node node here yo
           delete garbage_node_ptr;
         }
-        auto next_epoch_node_ptr = head_epoch_node_ptr_->next_ptr;
-        delete head_epoch_node_ptr_;
-
-        head_epoch_node_ptr_ = next_epoch_node_ptr;
+        auto head_epoch_node_ptr = epoch_node_list_.front();
+        epoch_node_list_.remove(head_epoch_node_ptr);
+        delete head_epoch_node_ptr;
       }
     }
 
@@ -446,6 +490,7 @@ class SkipList {
 
     /*
      * ThreadFunc()
+     * TODO: not sure if we need this if GC is invoked for us
      */
     void ThreadFunc() {
       while (!exited_flag_.load()) {
@@ -460,21 +505,21 @@ class SkipList {
 
     /*
      * StartThread()
+     * TODO: not sure if we need this if GC is invoked for us
      */
     void StartThread() {
       thread_ptr_ = new std::thread{[this]() { this->ThreadFunc(); }};
     }
 
    private:
-    EpochNode *cur_epoch_node_ptr_;
-    EpochNode *head_epoch_node_ptr_;
-    //    std::forward_list<EpochNode *> epoch_node_list_;
-    //    std::forward_list<EpochNode *>::iterator cur_epoch_node_itr_;
+    std::forward_list<EpochNode *> epoch_node_list_;
+    typename std::forward_list<EpochNode *>::iterator cur_epoch_node_itr_;
     std::atomic<bool> exited_flag_;
 
     // If GC is done with external thread then this should be set
     // to nullptr
     // Otherwise it points to a thread created by EpochManager internally
+    // TODO: may not need this if GC is invoked for us
     std::unique_ptr<std::thread> thread_ptr_;
   };
 };
