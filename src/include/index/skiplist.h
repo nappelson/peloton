@@ -141,12 +141,12 @@ class SkipList {
   /*
    * Return iterator to beginning of skip list
    */
-  ForwardIterator begin() { return ForwardIterator{this}; }
+  ForwardIterator Begin() { return ForwardIterator{this}; }
 
   /*
    * Return iterator using a given key
    */
-  ForwardIterator begin(const KeyType &start_key) {
+  ForwardIterator Begin(const KeyType &start_key) {
     return ForwardIterator{this, start_key};
   }
 
