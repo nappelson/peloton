@@ -12,13 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "common/harness.h"
-#include "gtest/gtest.h"
 
-#include "common/internal_types.h"
 #include "index/testing_index_util.h"
 #include "index/skiplist.h"
 #include "index/skiplist_index.h"
-#include "index/index_factory.h"
 #include "index/index_key.h"
 
 namespace peloton {
