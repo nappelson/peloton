@@ -26,6 +26,7 @@
 namespace peloton {
 namespace index {
 
+// Forward declare EpochManager
 template <typename NodeType>
 class EpochManager;
 
