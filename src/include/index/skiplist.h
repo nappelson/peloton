@@ -34,6 +34,9 @@ class EpochManager;
 // no thread sneaking in while GC decision is being made
 #define MAX_THREAD_COUNT ((int)0x7FFFFFFF)
 
+// Used to create edge towers, probability any tower gets this high is basically 0
+#define MAX_TOWER_HEIGHT 32
+
 /*
  * SKIPLIST_TEMPLATE_ARGUMENTS - Save some key strokes
  */
@@ -48,6 +51,9 @@ class SkipList {
   // Forward Declarations
   struct Node;
 
+  // Temporary flag for duplicate support
+  bool support_duplicates_ = false;
+
  public:
   explicit inline SkipList(
       KeyComparator p_key_cmp_obj = KeyComparator{},
@@ -56,7 +62,25 @@ class SkipList {
       : key_cmp_obj_{p_key_cmp_obj},
         key_eq_obj_{p_key_eq_obj},
         value_eq_obj_{p_value_eq_obj},
-        epoch_manager_{} {}
+        epoch_manager_{} {
+
+    // Create start and end towers
+    Node* start = new Node{};
+    start->next_node = {};
+    start->is_edge_tower = false;
+    start->deleted = false;
+
+    Node* end = new Node{};
+    end->next_node = {};
+    end->is_edge_tower = false;
+    end->deleted = false;
+
+    for (int i = 0; i < MAX_TOWER_HEIGHT; i++) {
+      start->next_node.push_back(end);
+    }
+    root_ = start;
+
+  }
 
   /*
    * Insert
@@ -69,14 +93,101 @@ class SkipList {
   bool Remove(const KeyType &key);
 
   /*
-   * Search
+   * Search for value given key
+   * Returns true if found, and sets value to value, else returns false
    */
-  const ValueType *Search(const KeyType &key) const;
+  bool Search(const KeyType &key, ValueType &value) const {
+
+    // Search for node
+    Node node = FindNode(key);
+
+    PL_ASSERT(!node.deleted);
+    PL_ASSERT(!node.is_edge_tower);
+    if (!key_cmp_equal(node.key, key)) return false;
+
+    PL_ASSERT(node.values.size() == 1);
+    value = node.values[0];
+
+    return false;
+  }
+
+  /*
+  * Search for value given key (WITH DUPLICATES)
+  * Returns true if found, and sets value to value, else returns false
+  * TODO: This function may be unnecessary, but implementing just in case
+  */
+  bool Search(const KeyType &key, ValueType &value, const ValueType wanted_value) const {
+
+    // Search for node
+    Node node = FindNode(key);
+
+    PL_ASSERT(!node.deleted);
+    PL_ASSERT(!node.is_edge_tower);
+    if (!key_cmp_equal(node.key, key)) return false;
+
+    for (auto node_value : node.values) {
+      if (value_cmp_equal(wanted_value, node_value)) {
+        value = node_value;
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+
+  /*
+   * Find node with largest key such that node.key <= key
+   * TODO: Can you use logically deleted nodes during traversal?
+   */
+   Node* FindNode(const KeyType &key) const {
+
+    auto curr_tower = root_;
+    //TODO: This search can be slightly sped up if we keep track of the tallest tower
+    auto curr_level = MAX_TOWER_HEIGHT - 1;
+
+    // Traverse towers, if you find it along the way, then return
+    while (curr_level > 0) {
+      while (NodeLessThan(key, curr_tower->next_node[curr_level])) {
+        curr_tower = curr_tower->next_node[curr_level];
+      }
+      if (key_cmp_equal(curr_tower->key, key)) return curr_tower;
+    }
+
+    // Reached lowest level
+    PL_ASSERT(key_cmp_less(curr_tower->key, key));
+    PL_ASSERT(curr_level == 0);
+    PL_ASSERT(!curr_tower->is_edge_tower);
+
+    // If we end at last node, return immediately
+    if (curr_tower->next_node[0]->is_edge_tower) return curr_tower;
+
+    while (!curr_tower->next_node[0]->is_edge_tower && // tower is not last tower
+           key_cmp_less_equal(key, curr_tower->next_node[0]) // next tower is less or equal
+        ) {
+      curr_tower = curr_tower->next_node[0];
+    }
+
+    PL_ASSERT(!curr_tower->is_edge_tower);
+    PL_ASSERT(key_cmp_less_equal(curr_tower->key, key));
+    return curr_tower;
+  }
 
   /*
    * Exists
    */
-  bool Exists(const KeyType &key) const;
+  bool Exists(const KeyType &key) const {
+    ValueType dummy_value;
+    return Search(key, dummy_value);
+  }
+
+  /*
+   * Exists (w/ duplicates)
+   */
+  bool Exists(const KeyType &key, const ValueType &wanted_value) const {
+    ValueType dummy_value;
+    return Search(key, dummy_value, wanted_value);
+  }
 
   /*
    * NeedGarbageCollection() - Whether the skiplist needs gaarbage collection or
@@ -107,12 +218,20 @@ class SkipList {
   }
 
  private:
+
+  /*
+   * Returns true if node is not end tower and key < node.key
+   */
+  inline bool NodeLessThan(KeyType key, Node node) {
+    return (!node.is_edge_tower && key_cmp_less(key, node.key));
+  }
+
   struct Node {
     // The key
     KeyType key;
 
-    // The value
-    ValueType value;
+    // Values (vector allows support for duplicates
+    std::vector<ValueType> values;
 
     // For each level, store the next node
     std::vector<Node *> next_node;
@@ -120,6 +239,9 @@ class SkipList {
     // Deleted bit for this node (logically removed)
     // TODO (steal last bit from next pointer to see deleted bit)
     bool deleted;
+
+    // Denotes if node represents an edge tower
+    bool is_edge_tower;
   };
 
   KeyComparator key_cmp_obj_;
