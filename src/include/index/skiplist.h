@@ -190,6 +190,11 @@ class SkipList {
   }
 
   /*
+   * Returns root of SkipList
+   */
+  inline Node* GetRoot() { return root_;}
+
+  /*
    * NeedGarbageCollection() - Whether the skiplist needs gaarbage collection or
    * not
    */
@@ -218,6 +223,11 @@ class SkipList {
   }
 
  private:
+
+
+  ///////////////////////////////////////////////////////////////////
+  // SkipList Helpers
+  ///////////////////////////////////////////////////////////////////
 
   /*
    * Returns true if node is not end tower and key < node.key
@@ -283,18 +293,24 @@ class SkipList {
    public:
     /*
      * Default Constructor
+     * TODO: May not be needed
      */
-    ForwardIterator(){};
+    //ForwardIterator(){};
 
     /*
      * Constructor given a SkipList
      */
-    ForwardIterator(SkipList *skip_list);
+    ForwardIterator(SkipList *skip_list) {
+
+      curr_node_ = skip_list->GetRoot()->next_node[0];
+    }
 
     /*
      * Constructor - Construct an iterator given a key
      */
-    ForwardIterator(SkipList *skip_list, const KeyType &start_key);
+    ForwardIterator(SkipList *skip_list, const KeyType &start_key) {
+      curr_node_ = skip_list->FindNode(start_key);
+    }
 
     /*
      * Copy Constructor
@@ -310,6 +326,11 @@ class SkipList {
     * Destructor
     */
     ~ForwardIterator();
+
+    /*
+     * True if End of Iterator
+     */
+    inline bool IsEnd() { return curr_node_->is_edge_tower; }
 
     ///////////////////////////////////////////////////////////////////
     // Operators
@@ -365,7 +386,10 @@ class SkipList {
     /*
      * Step forward one in skip list
      */
-    void step_forward();
+    void step_forward() {
+      PL_ASSERT(!curr_node_->is_edge_tower);
+      curr_node_->next_node[0];
+    }
   };
 
   ///////////////////////////////////////////////////////////////////
