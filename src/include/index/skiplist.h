@@ -82,6 +82,8 @@ class SkipList {
 
   }
 
+  void SetSupportDuplicates(bool support) { support_duplicates_ = support; }
+
   /*
    * Insert
    */
@@ -152,6 +154,7 @@ class SkipList {
         curr_tower = curr_tower->next_node[curr_level];
       }
       if (key_cmp_equal(curr_tower->key, key)) return curr_tower;
+      curr_level--;
     }
 
     // Reached lowest level

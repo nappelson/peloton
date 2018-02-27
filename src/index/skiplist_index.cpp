@@ -30,7 +30,10 @@ SKIPLIST_INDEX_TYPE::SkipListIndex(IndexMetadata *metadata)
       equals{},
 
       container{comparator, equals} {
-  // TODO: Add your implementation here
+
+  // TODO: I think this is how we decide whether to support duplictate keys
+  container.SetSupportDuplicates(!metadata->HasUniqueKeys());
+
   return;
 }
 
