@@ -378,10 +378,10 @@ class SkipList {
   ///////////////////////////////////////////////////////////////////
 
   /*
-   * Returns true if node is not end tower and key < node.key
+   * Returns true if node is not end tower and node.key < key
    */
   inline bool NodeLessThan(KeyType key, Node node) {
-    return (!node.is_edge_tower && key_cmp_less(key, node.key));
+    return (!node.is_edge_tower && key_cmp_less(node.key, key));
   }
 
   struct Node {
