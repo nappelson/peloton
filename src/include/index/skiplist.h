@@ -87,12 +87,157 @@ class SkipList {
   /*
    * Insert
    */
-  bool Insert(const KeyType &key, const ValueType &value);
+  bool Insert(const KeyType &key, const ValueType &value) {
+    std::vector<Node *> parents = FindParents(key);
+
+    Node* new_node = new Node{};
+    new_node->is_edge_tower = false;
+    new_node->deleted = false;
+    new_node->key = key;
+    new_node->values = {value};
+
+    unsigned int node_level = generate_level() % MAX_TOWER_HEIGHT;
+    int current_level = 0;
+
+    new_node->next_node = std::vector<Node *>(node_level);
+
+    while (current_level < node_level) {
+        Node *next_node = parents[current_level]->next_node[current_level];
+
+        // parent was deleted
+        if (next_node % 2 == 1) {
+            parents[current_level] = UpdateParent(root_, current_level, key);
+            continue;
+        }
+
+        // Key already inserted
+        if (key_cmp_equal(key, next_node->key)) {
+            if (current_level == 0) {
+                return false;
+            }
+
+            // Should never get past first level if key already exists elsewhere
+            PL_ASSERT(false);
+        }
+
+        // Node inserted after parent
+        if (key_cmp_less(next_node->key, key)) {
+            parents[current_level] = UpdateParent(parents[current_level],
+                    current_level, key);
+            continue;
+        }
+
+        new_node->next_node[current_level] = next_node;
+
+        // If CAS succeeds go to next level, otherwise try again
+        if (parents[current_level].compare_exchange_strong(next_node, new_node)) {
+            current_level++;
+        }
+    }
+
+    return true;
+  }
 
   /*
    * Delete
    */
-  bool Remove(const KeyType &key);
+  bool Remove(const KeyType &key) {
+    std::vector<Node *> parents = FindParents(key);
+
+    Node *del_node = parents[0]->next_node[0];
+
+    // bottom level parent being deleted
+    while (del_node % 2 == 1) {
+        parents[0] = UpdateParent(root_, 0 /* level */, key);
+        del_node = parents[0]->next_node[0];
+    }
+
+    // Node does not exist
+    if (!keycmp_equal(key, del_node->key)) {
+        return false;
+    }
+
+    del_node->deleted = true;
+
+    int current_level = del_node->next_node.size() - 1;
+
+    bool marked_pointer = false;
+
+    while (current_level >= 0) {
+        Node *next_node = del_node->next_node[current_level];
+
+        // node already being deleted
+        if (next_node % 2 == 1 && !marked_pointer) {
+            return false;
+        }
+
+        // mark the next pointer so future nodes know it is being deleted
+        if (!marked_pointer && !del_node->next_node[current_level].compare_exchange_strong(
+                    next_node, next_node + 1)) {
+            continue;
+        }
+
+        marked_pointer = true;
+
+        Node *next_tmp = parents[current_level]->next_node[current_level];
+
+        // parent node being deleted
+        if (next_tmp % 2 == 1) {
+            parents[current_level] = UpdateParent(root_, current_level, key);
+            continue;
+        }
+
+        // something inserted after parent
+        if (!keycmp_equal(key, next_tmp->key)) {
+            parents[current_level] = UpdateParent(next_tmp, current_level, key);
+            continue;
+        }
+
+        // CAS parents next to del_node's next
+        if (parents[current_level]->next_node[current_level].compare_exchange_strong(
+                    del_node, del_node->next_node[current_level] - 1)) {
+            current_level--;
+            marked_pointer = false;
+        }
+    }
+    return true;
+  }
+
+  Node *UpdateParent(Node *parent, int level, const KeyType &key) {
+    Node *next_node = parent->next_node[level];
+    while (NodeLessThan(next_node, key)) {
+        parent = next_node;
+        next_node = parent->next_node[level];
+    }
+    return parent;
+  }
+
+  // returns a vector of Nodes which come directly before the key in each level
+  std::vector<Node *> FindParents(const KeyType &key) {
+    // Node directly before the key in each level
+    std::vector<Node *> parents(MAX_TOWER_HEIGHT);
+
+    int current_tower = MAX_TOWER_HEIGHT - 1;
+    Node *current_node = root_;
+    Node *next_node;
+
+    // parent of one level is at least the parent of the level above
+    while (current_tower >= 0) {
+        next_node = current_node->next_node[current_tower];
+
+        // not done traversing
+        if (NodeLessThan(next_node, key)) {
+            current_node = next_node;
+        // found parent of current level
+        } else {
+            parents[current_tower] = current_node;
+            current_tower--;
+        }
+    }
+
+    return parents;
+
+  }
 
   /*
    * Search for value given key
