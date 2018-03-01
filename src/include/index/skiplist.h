@@ -46,10 +46,18 @@ class EpochManager;
 
 template <typename KeyType, typename ValueType, typename KeyComparator,
           typename KeyEqualityChecker, typename ValueEqualityChecker>
+
+
+// Key Value Pair
+
+
 class SkipList {
  private:
   // Forward Declarations
   struct Node;
+
+  using KeyValuePair = std::pair<KeyType, ValueType>;
+
 
   // Temporary flag for duplicate support
   bool support_duplicates_ = false;
@@ -68,12 +76,10 @@ class SkipList {
     Node* start = new Node{};
     start->next_node = {};
     start->is_edge_tower = false;
-    start->deleted = false;
 
     Node* end = new Node{};
     end->next_node = {};
     end->is_edge_tower = false;
-    end->deleted = false;
 
     for (int i = 0; i < MAX_TOWER_HEIGHT; i++) {
       start->next_node.push_back(end);
@@ -92,9 +98,7 @@ class SkipList {
 
     Node* new_node = new Node{};
     new_node->is_edge_tower = false;
-    new_node->deleted = false;
-    new_node->key = key;
-    new_node->values = {value};
+    new_node->kv_p = std::make_pair(key, value);
 
     unsigned int node_level = generate_level() % MAX_TOWER_HEIGHT;
     int current_level = 0;
@@ -141,6 +145,7 @@ class SkipList {
   /*
    * Delete
    */
+  //TODO: Record the current epoch in the node when marking as deleted using AddGarbageNode
   bool Remove(const KeyType &key) {
     std::vector<Node *> parents = FindParents(key);
 
@@ -156,8 +161,6 @@ class SkipList {
     if (!keycmp_equal(key, del_node->key)) {
         return false;
     }
-
-    del_node->deleted = true;
 
     int current_level = del_node->next_node.size() - 1;
 
@@ -248,7 +251,7 @@ class SkipList {
     // Search for node
     Node node = FindNode(key);
 
-    PL_ASSERT(!node.deleted);
+    PL_ASSERT(!IsLogicalDeleted(node));
     PL_ASSERT(!node.is_edge_tower);
     if (!key_cmp_equal(node.key, key)) return false;
 
@@ -268,7 +271,7 @@ class SkipList {
     // Search for node
     Node node = FindNode(key);
 
-    PL_ASSERT(!node.deleted);
+    PL_ASSERT(!IsLogicalDeleted(node));
     PL_ASSERT(!node.is_edge_tower);
     if (!key_cmp_equal(node.key, key)) return false;
 
@@ -285,7 +288,7 @@ class SkipList {
 
   /*
    * Find node with largest key such that node.key <= key
-   * TODO: Can you use logically deleted nodes during traversal?
+   * TODO: Handle case where you find the node with key = key, but its deleted
    */
    Node* FindNode(const KeyType &key) const {
 
@@ -294,31 +297,22 @@ class SkipList {
     auto curr_level = MAX_TOWER_HEIGHT - 1;
 
     // Traverse towers, if you find it along the way, then return
-    while (curr_level > 0) {
-      while (NodeLessThan(key, curr_tower->next_node[curr_level])) {
-        curr_tower = curr_tower->next_node[curr_level];
+    while (true) {
+      auto next_node = GetAddress(curr_tower->next_node[curr_level]);
+      while (NodeLessThanEqual(key, next_node) && // jump to next node if eligeble
+           !(key_cmp_equal(key, next_node) && IsLogicalDeleted(next_node))) // dont jump if node you're looking for is deleted
+      {
+        curr_tower = GetAddress(curr_tower->next_node[curr_level]);
       }
-      if (key_cmp_equal(curr_tower->key, key)) return curr_tower;
+
+      if (key_cmp_equal(curr_tower->key, key) || curr_level == 0) {
+        PL_ASSERT(key_cmp_less_equal(curr_tower->key, key));
+        PL_ASSERT(!(key_cmp_equal(curr_tower->key) && IsLogicalDeleted(curr_tower)));
+        return curr_tower;
+      }
+
       curr_level--;
     }
-
-    // Reached lowest level
-    PL_ASSERT(key_cmp_less(curr_tower->key, key));
-    PL_ASSERT(curr_level == 0);
-    PL_ASSERT(!curr_tower->is_edge_tower);
-
-    // If we end at last node, return immediately
-    if (curr_tower->next_node[0]->is_edge_tower) return curr_tower;
-
-    while (!curr_tower->next_node[0]->is_edge_tower && // tower is not last tower
-           key_cmp_less_equal(key, curr_tower->next_node[0]) // next tower is less or equal
-        ) {
-      curr_tower = curr_tower->next_node[0];
-    }
-
-    PL_ASSERT(!curr_tower->is_edge_tower);
-    PL_ASSERT(key_cmp_less_equal(curr_tower->key, key));
-    return curr_tower;
   }
 
   /*
@@ -364,9 +358,9 @@ class SkipList {
    */
   Node *CreateNode() {
     Node *cur_node = new Node{};
-    cur_node->key = KeyType{};
-    cur_node->value = ValueType{};
-    cur_node->deleted = false;
+    cur_node->kv_p = std::make_pair(KeyType{}, ValueType{});
+    cur_node->is_edge_tower = false;
+    cur_node->next_node = {};
     return cur_node;
   }
 
@@ -384,19 +378,26 @@ class SkipList {
     return (!node.is_edge_tower && key_cmp_less(node.key, key));
   }
 
-  struct Node {
-    // The key
-    KeyType key;
+  /*
+ * Returns true if node is not end tower and node.key <= key
+ */
+  inline bool NodeLessThanEqual(KeyType key, Node node) {
+    return (!node.is_edge_tower && key_cmp_less_equal(key, node.key));
+  }
 
-    // Values (vector allows support for duplicates
-    std::vector<ValueType> values;
+  // Returns address of a possibly deleted node
+  static inline Node* GetAddress(Node* addr) { return ((addr % 2) == 1) ? addr - 1 : addr;}
+
+  // Returns true if node is logically deleted
+  static inline bool IsLogicalDeleted(Node* node) { return (node->next_node[node->next_node.size() - 1] % 2) == 1;}
+
+  struct Node {
+
+    // Key Value pair
+    KeyValuePair kv_p;
 
     // For each level, store the next node
     std::vector<Node *> next_node;
-
-    // Deleted bit for this node (logically removed)
-    // TODO (steal last bit from next pointer to see deleted bit)
-    bool deleted;
 
     // Denotes if node represents an edge tower
     bool is_edge_tower;
@@ -447,6 +448,7 @@ class SkipList {
 
     /*
      * Constructor given a SkipList
+     * TODO: Should we join an epoch
      */
     ForwardIterator(SkipList *skip_list) {
 
@@ -455,6 +457,7 @@ class SkipList {
 
     /*
      * Constructor - Construct an iterator given a key
+     * TODO: Should we join an epoch?
      */
     ForwardIterator(SkipList *skip_list, const KeyType &start_key) {
       curr_node_ = skip_list->FindNode(start_key);
@@ -512,7 +515,14 @@ class SkipList {
     /*
      * Postfix operator++
      */
-    inline ForwardIterator operator++(int);
+    inline ForwardIterator operator++(int) {
+      if (IsEnd()) {
+        return *this;
+      } else {
+        step_forward();
+        return *this;
+      }
+    }
 
     /*
      * Postfix operator--
@@ -523,12 +533,12 @@ class SkipList {
     * operator * - Return the value reference currently pointed to by this
     * iterator
     */
-    inline const Node &operator*() { return *curr_node_; }
+    inline const KeyValuePair &operator*() { return &(curr_node_->kv_p); }
 
     /*
      * operator -> - Return the value pointer pointed to by this iterator
      */
-    inline const Node *operator->() { return &*curr_node_; }
+    inline const KeyValuePair *operator->() { return curr_node_->kv_p; }
 
    private:
     /*
@@ -536,7 +546,18 @@ class SkipList {
      */
     void step_forward() {
       PL_ASSERT(!curr_node_->is_edge_tower);
-      curr_node_->next_node[0];
+
+      curr_node_ = GetAddress(curr_node_->next_node[0]);
+
+      // Iterate until we find a non-deleted node
+      while (IsLogicalDeleted(curr_node_)) {
+        curr_node_ = GetAddress(curr_node_->next_node[0]);
+
+        // If we get to end tower, return
+        if (curr_node_->is_edge_tower) return;
+      }
+
+      return;
     }
   };
 
