@@ -31,7 +31,7 @@ SKIPLIST_INDEX_TYPE::SkipListIndex(IndexMetadata *metadata)
 
       container{comparator, equals} {
 
-  // TODO: I think this is how we decide whether to support duplictate keys
+  // TODO: I think this is how we decide whether to support duplicate keys
   container.SetSupportDuplicates(!metadata->HasUniqueKeys());
 
   return;
@@ -113,8 +113,16 @@ void SKIPLIST_INDEX_TYPE::ScanLimit(
 
 SKIPLIST_TEMPLATE_ARGUMENTS
 void SKIPLIST_INDEX_TYPE::ScanAllKeys(
-    UNUSED_ATTRIBUTE std::vector<ValueType> &result) {
-  // TODO: Add your implementation here
+    std::vector<ValueType> &result) {
+
+//  auto it = container.Begin();
+//
+//  // scan all keys
+//  while (it.IsEnd() == false) {
+//    result.push_back(it->second);
+//    it++;
+//  }
+//
   return;
 }
 

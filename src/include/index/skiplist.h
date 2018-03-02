@@ -101,7 +101,7 @@ class SkipList {
     new_node->kv_p = std::make_pair(key, value);
 
     unsigned int node_level = generate_level() % MAX_TOWER_HEIGHT;
-    int current_level = 0;
+    unsigned int current_level = 0;
 
     new_node->next_node = std::vector<Node *>(node_level);
 
@@ -175,6 +175,7 @@ class SkipList {
         }
 
         // mark the next pointer so future nodes know it is being deleted
+        //TODO: Verify next_node + 1 works as intended (may need to be (Node*)((size_t)next_node + 1)
         if (!marked_pointer && !del_node->next_node[current_level].compare_exchange_strong(
                     next_node, next_node + 1)) {
             continue;
@@ -248,17 +249,28 @@ class SkipList {
    */
   bool Search(const KeyType &key, ValueType &value) const {
 
+    // Join Epoch
+    auto epoch_node = epoch_manager_.JoinEpoch();
+
     // Search for node
     Node node = FindNode(key);
 
     PL_ASSERT(!IsLogicalDeleted(node));
     PL_ASSERT(!node.is_edge_tower);
-    if (!key_cmp_equal(node.key, key)) return false;
+    if (!key_cmp_equal(node.kv_p.first, key)) {
 
-    PL_ASSERT(node.values.size() == 1);
-    value = node.values[0];
+      // Leave Epoch
+      epoch_manager_.LeaveEpoch(epoch_node);
 
-    return false;
+      return false;
+    }
+
+    value = node.kv_p.second;
+
+    // Leave Epoch
+    epoch_manager_.LeaveEpoch(epoch_node);
+
+    return true;
   }
 
   /*
@@ -268,19 +280,39 @@ class SkipList {
   */
   bool Search(const KeyType &key, ValueType &value, const ValueType wanted_value) const {
 
+    // This function should only really be used with duplicates enabled
+    PL_ASSERT(support_duplicates_);
+
+    // Join Epoch
+    auto epoch_node = epoch_manager_.JoinEpoch();
+
     // Search for node
     Node node = FindNode(key);
+    PL_ASSERT(node.is_edge_tower || key_cmp_less(node.kv_p.first, key));
 
-    PL_ASSERT(!IsLogicalDeleted(node));
-    PL_ASSERT(!node.is_edge_tower);
-    if (!key_cmp_equal(node.key, key)) return false;
+    // If we start with start tower, jump to next
+    if (node.is_edge_tower) {
+      node = GetAddress(node.next_node[0]);
+    }
 
-    for (auto node_value : node.values) {
-      if (value_cmp_equal(wanted_value, node_value)) {
-        value = node_value;
+    while (!node.is_edge_tower && key_cmp_less_equal(node.kv_p.first, key)) {
+
+      if (key_cmp_equal(node.kv_p.first, key) &&
+          value_cmp_equal(node.kv_p.second, wanted_value) &&
+          !IsLogicalDeleted(node)) {
+
+        value = node.kv_p.second;
+
+        // Leave Epoch
+        epoch_manager_.LeaveEpoch(epoch_node);
+
         return true;
       }
+      node = GetAddress(node.next_node[0]);
     }
+
+    // Leave Epoch
+    epoch_manager_.LeaveEpoch(epoch_node);
 
     return false;
   }
@@ -288,7 +320,7 @@ class SkipList {
 
   /*
    * Find node with largest key such that node.key <= key
-   * TODO: Handle case where you find the node with key = key, but its deleted
+   * TODO: Check correctness of inner while loop
    */
    Node* FindNode(const KeyType &key) const {
 
@@ -299,14 +331,14 @@ class SkipList {
     // Traverse towers, if you find it along the way, then return
     while (true) {
       auto next_node = GetAddress(curr_tower->next_node[curr_level]);
-      while (NodeLessThanEqual(key, next_node) && // jump to next node if eligeble
+      while (((NodeLessThanEqual(key, next_node) && !support_duplicates_) || // jump to next node if eligeble
+              (NodeLessThan(key, next_node) && support_duplicates_)) && // dont jump if node greater or equal to key
            !(key_cmp_equal(key, next_node) && IsLogicalDeleted(next_node))) // dont jump if node you're looking for is deleted
       {
         curr_tower = GetAddress(curr_tower->next_node[curr_level]);
       }
 
       if (key_cmp_equal(curr_tower->key, key) || curr_level == 0) {
-        PL_ASSERT(key_cmp_less_equal(curr_tower->key, key));
         PL_ASSERT(!(key_cmp_equal(curr_tower->key) && IsLogicalDeleted(curr_tower)));
         return curr_tower;
       }
@@ -375,21 +407,21 @@ class SkipList {
    * Returns true if node is not end tower and node.key < key
    */
   inline bool NodeLessThan(KeyType key, Node node) {
-    return (!node.is_edge_tower && key_cmp_less(node.key, key));
+    return (!node.is_edge_tower && key_cmp_less(node.kv_p.first, key));
   }
 
   /*
  * Returns true if node is not end tower and node.key <= key
  */
   inline bool NodeLessThanEqual(KeyType key, Node node) {
-    return (!node.is_edge_tower && key_cmp_less_equal(key, node.key));
+    return (!node.is_edge_tower && key_cmp_less_equal(key, node.kv_p.first));
   }
 
   // Returns address of a possibly deleted node
-  static inline Node* GetAddress(Node* addr) { return ((addr % 2) == 1) ? addr - 1 : addr;}
+  static inline Node* GetAddress(Node* addr) { return (((size_t)addr % 2) == 1) ? (Node*)((size_t)addr - 1) : addr;}
 
   // Returns true if node is logically deleted
-  static inline bool IsLogicalDeleted(Node* node) { return (node->next_node[node->next_node.size() - 1] % 2) == 1;}
+  static inline bool IsLogicalDeleted(Node* node) { return (((size_t)(node->next_node[node->next_node.size() - 1])) % 2) == 1;}
 
   struct Node {
 
@@ -448,19 +480,46 @@ class SkipList {
 
     /*
      * Constructor given a SkipList
-     * TODO: Should we join an epoch
      */
     ForwardIterator(SkipList *skip_list) {
 
-      curr_node_ = skip_list->GetRoot()->next_node[0];
+      // Join Epoch
+      auto epoch_node = skip_list->epoch_manager_.JoinEpoch();
+
+      curr_node_ = GetAddress(skip_list->GetRoot()->next_node[0]);
+
+      // Leave epoch
+      skip_list->epoch_manager_.LeaveEpoch(epoch_node);
     }
 
     /*
      * Constructor - Construct an iterator given a key
-     * TODO: Should we join an epoch?
+     *
+     * The iterator returned will points to a data item whose key is greater than
+     * or equal to the given start key. If such key does not exist then it will
+     * be the smallest key that is greater than start_key
      */
     ForwardIterator(SkipList *skip_list, const KeyType &start_key) {
-      curr_node_ = skip_list->FindNode(start_key);
+
+      // Join Epoch
+      auto epoch_node = skip_list->epoch_manager_.JoinEpoch();
+
+      auto node = skip_list->FindNode(start_key);
+
+      // If we start with start tower, jump to next
+      if (node.is_edge_tower) {
+        node = GetAddress(node.next_node[0]);
+      }
+
+      // Iterate until we find first node greater than or equal to key
+      while (!node->is_edge_tower && skip_list->key_cmp_less(curr_node_->kv_p->first, start_key)) {
+        node = GetAddress(node->next_node[0]);
+      }
+
+      PL_ASSERT(node->is_edge_tower || skip_list->key_cmp_greater_equal(node->kv_p->first, start_key));
+
+      // Leave epoch
+      skip_list->epoch_manager_.LeaveEpoch(epoch_node);
     }
 
     /*
@@ -505,7 +564,14 @@ class SkipList {
     /*
      * Prefix operator++
      */
-    inline ForwardIterator &operator++();
+    inline ForwardIterator &operator++() {
+      if (IsEnd()) {
+        return *this;
+      } else {
+        step_forward();
+        return *this;
+      }
+    }
 
     /*
      * Prefix operator--
@@ -519,8 +585,9 @@ class SkipList {
       if (IsEnd()) {
         return *this;
       } else {
+        auto temp = *this;
         step_forward();
-        return *this;
+        return temp;
       }
     }
 
@@ -538,7 +605,7 @@ class SkipList {
     /*
      * operator -> - Return the value pointer pointed to by this iterator
      */
-    inline const KeyValuePair *operator->() { return curr_node_->kv_p; }
+    inline const KeyValuePair *operator->() { return &curr_node_->kv_p; }
 
    private:
     /*
@@ -564,26 +631,31 @@ class SkipList {
   ///////////////////////////////////////////////////////////////////
   // Key Comparison Member Functions
   ///////////////////////////////////////////////////////////////////
- private:
+ public:
   inline bool key_cmp_less(const KeyType &key1, const KeyType &key2) const {
+    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return key_cmp_obj_(key1, key2);
   }
 
   inline bool key_cmp_equal(const KeyType &key1, const KeyType &key2) const {
+    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return key_eq_obj_(key1, key2);
   }
 
   inline bool key_cmp_greater_equal(const KeyType &key1,
                                     const KeyType &key2) const {
+    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return !key_cmp_less(key1, key2);
   }
 
   inline bool key_cmp_greater(const KeyType &key1, const KeyType &key2) const {
+    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return key_cmp_less(key2, key1);
   }
 
   inline bool key_cmp_less_equal(const KeyType &key1,
                                  const KeyType &key2) const {
+    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return !key_cmp_greater(key1, key2);
   }
 
@@ -593,6 +665,7 @@ class SkipList {
 
   inline bool value_cmp_equal(const ValueType &value1,
                               const ValueType &value2) const {
+    PL_ASSERT(value1 != nullptr && value2 != nullptr);
     return value_eq_obj_(value1, value2);
   }
 };
