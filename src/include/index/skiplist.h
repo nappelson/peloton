@@ -46,10 +46,18 @@ class EpochManager;
 
 template <typename KeyType, typename ValueType, typename KeyComparator,
           typename KeyEqualityChecker, typename ValueEqualityChecker>
+
+
+// Key Value Pair
+
+
 class SkipList {
  private:
   // Forward Declarations
   struct Node;
+
+  using KeyValuePair = std::pair<KeyType, ValueType>;
+
 
   // Temporary flag for duplicate support
   bool support_duplicates_ = false;
@@ -68,12 +76,10 @@ class SkipList {
     Node* start = new Node{};
     start->next_node = {};
     start->is_edge_tower = false;
-    start->deleted = false;
 
     Node* end = new Node{};
     end->next_node = {};
     end->is_edge_tower = false;
-    end->deleted = false;
 
     for (int i = 0; i < MAX_TOWER_HEIGHT; i++) {
       start->next_node.push_back(end);
@@ -88,18 +94,16 @@ class SkipList {
    * Insert
    */
   bool Insert(const KeyType &key, const ValueType &value) {
-    auto epoch = JoinEpoch();
+    auto epoch = epoch_manager_.JoinEpoch();
 
-    std::vector<Node *> parents = FindParents(key, val);
+    std::vector<Node *> parents = FindParents(key, value);
 
     Node* new_node = new Node{};
     new_node->is_edge_tower = false;
-    new_node->deleted = false;
-    new_node->key = key;
-    new_node->values = {value};
+    new_node->kv_p = std::make_pair(key, value);
 
     unsigned int node_level = generate_level() % MAX_TOWER_HEIGHT;
-    int current_level = 0;
+    unsigned int current_level = 0;
 
     new_node->next_node = std::vector<Node *>(node_level);
 
@@ -113,9 +117,9 @@ class SkipList {
         }
 
         // Key already inserted
-        if (key_cmp_equal(key, next_node->key)) {
+        if (key_cmp_equal(key, next_node->kv_p.first)) {
             if (current_level == 0) {
-                LeaveEpoch(epoch);
+                epoch_manager_.LeaveEpoch(epoch);
                 return false;
             }
 
@@ -124,7 +128,7 @@ class SkipList {
         }
 
         // Node inserted after parent
-        if (key_cmp_less(next_node->key, key)) {
+        if (key_cmp_less(next_node->kv_p.first, key)) {
             parents[current_level] = UpdateParent(parents[current_level],
                     current_level, key, value);
             continue;
@@ -138,7 +142,7 @@ class SkipList {
         }
     }
 
-    LeaveEpoch(epoch);
+    epoch_manager_.LeaveEpoch(epoch);
     return true;
   }
 
@@ -151,7 +155,7 @@ class SkipList {
    */
   bool Remove(const KeyType &key, const ValueType &val) {
 
-    auto epoch = JoinEpoch();
+    auto epoch = epoch_manager_.JoinEpoch();
 
     std::vector<Node *> parents = FindParents(key, val);
 
@@ -164,13 +168,11 @@ class SkipList {
     }
 
     // Node does not exist
-    if (!keycmp_equal(key, del_node->key) || (support_duplicates_ &&
-                !value_cmp_eq(del_node->value, val))) {
-        LeaveEpoch(epoch);
+    if (!keycmp_equal(key, del_node->kv_p.first) || (support_duplicates_ &&
+                !value_cmp_eq(del_node->kv_p.second, val))) {
+        epoch_manager_.LeaveEpoch(epoch);
         return false;
     }
-
-    del_node->deleted = true;
 
     int current_level = del_node->next_node.size() - 1;
 
@@ -181,11 +183,12 @@ class SkipList {
 
         // node already being deleted
         if (next_node % 2 == 1 && !marked_pointer) {
-            LeaveEpoch(epoch);
+            epoch_manager_.LeaveEpoch(epoch);
             return false;
         }
 
         // mark the next pointer so future nodes know it is being deleted
+        //TODO: Verify next_node + 1 works as intended (may need to be (Node*)((size_t)next_node + 1)
         if (!marked_pointer && !del_node->next_node[current_level].compare_exchange_strong(
                     next_node, next_node + 1)) {
             continue;
@@ -202,8 +205,8 @@ class SkipList {
         }
 
         // something inserted after parent
-        if (!keycmp_equal(key, next_tmp->key) || (support_duplicates_ &&
-                !value_cmp_eq(del_node->value, val))) {
+        if (!keycmp_equal(key, next_tmp->kv_p.first) || (support_duplicates_ &&
+                !value_cmp_eq(del_node->kv_p.second, val))) {
             parents[current_level] = UpdateParent(next_tmp, current_level, key, val);
             continue;
         }
@@ -217,8 +220,8 @@ class SkipList {
     }
 
     // mark fully deleted node as a garbage node
-    AddGarbageNode(del_node);
-    LeaveEpoch(epoch);
+    epoch_manager_.AddGarbageNode(del_node);
+    epoch_manager_.LeaveEpoch(epoch);
     return true;
   }
 
@@ -266,17 +269,28 @@ class SkipList {
    */
   bool Search(const KeyType &key, ValueType &value) const {
 
+    // Join Epoch
+    auto epoch_node = epoch_manager_.JoinEpoch();
+
     // Search for node
     Node node = FindNode(key);
 
-    PL_ASSERT(!node.deleted);
+    PL_ASSERT(!IsLogicalDeleted(node));
     PL_ASSERT(!node.is_edge_tower);
-    if (!key_cmp_equal(node.key, key)) return false;
+    if (!key_cmp_equal(node.kv_p.first, key)) {
 
-    PL_ASSERT(node.values.size() == 1);
-    value = node.values[0];
+      // Leave Epoch
+      epoch_manager_.LeaveEpoch(epoch_node);
 
-    return false;
+      return false;
+    }
+
+    value = node.kv_p.second;
+
+    // Leave Epoch
+    epoch_manager_.LeaveEpoch(epoch_node);
+
+    return true;
   }
 
   /*
@@ -286,19 +300,39 @@ class SkipList {
   */
   bool Search(const KeyType &key, ValueType &value, const ValueType wanted_value) const {
 
+    // This function should only really be used with duplicates enabled
+    PL_ASSERT(support_duplicates_);
+
+    // Join Epoch
+    auto epoch_node = epoch_manager_.JoinEpoch();
+
     // Search for node
     Node node = FindNode(key);
+    PL_ASSERT(node.is_edge_tower || key_cmp_less(node.kv_p.first, key));
 
-    PL_ASSERT(!node.deleted);
-    PL_ASSERT(!node.is_edge_tower);
-    if (!key_cmp_equal(node.key, key)) return false;
+    // If we start with start tower, jump to next
+    if (node.is_edge_tower) {
+      node = GetAddress(node.next_node[0]);
+    }
 
-    for (auto node_value : node.values) {
-      if (value_cmp_equal(wanted_value, node_value)) {
-        value = node_value;
+    while (!node.is_edge_tower && key_cmp_less_equal(node.kv_p.first, key)) {
+
+      if (key_cmp_equal(node.kv_p.first, key) &&
+          value_cmp_equal(node.kv_p.second, wanted_value) &&
+          !IsLogicalDeleted(node)) {
+
+        value = node.kv_p.second;
+
+        // Leave Epoch
+        epoch_manager_.LeaveEpoch(epoch_node);
+
         return true;
       }
+      node = GetAddress(node.next_node[0]);
     }
+
+    // Leave Epoch
+    epoch_manager_.LeaveEpoch(epoch_node);
 
     return false;
   }
@@ -306,7 +340,7 @@ class SkipList {
 
   /*
    * Find node with largest key such that node.key <= key
-   * TODO: Can you use logically deleted nodes during traversal?
+   * TODO: Check correctness of inner while loop
    */
    Node* FindNode(const KeyType &key) const {
 
@@ -315,31 +349,22 @@ class SkipList {
     auto curr_level = MAX_TOWER_HEIGHT - 1;
 
     // Traverse towers, if you find it along the way, then return
-    while (curr_level > 0) {
-      while (NodeLessThan(key, curr_tower->next_node[curr_level])) {
-        curr_tower = curr_tower->next_node[curr_level];
+    while (true) {
+      auto next_node = GetAddress(curr_tower->next_node[curr_level]);
+      while (((NodeLessThanEqual(key, next_node) && !support_duplicates_) || // jump to next node if eligeble
+              (NodeLessThan(key, next_node) && support_duplicates_)) && // dont jump if node greater or equal to key
+           !(key_cmp_equal(key, next_node) && IsLogicalDeleted(next_node))) // dont jump if node you're looking for is deleted
+      {
+        curr_tower = GetAddress(curr_tower->next_node[curr_level]);
       }
-      if (key_cmp_equal(curr_tower->key, key)) return curr_tower;
+
+      if (key_cmp_equal(curr_tower->key, key) || curr_level == 0) {
+        PL_ASSERT(!(key_cmp_equal(curr_tower->key) && IsLogicalDeleted(curr_tower)));
+        return curr_tower;
+      }
+
       curr_level--;
     }
-
-    // Reached lowest level
-    PL_ASSERT(key_cmp_less(curr_tower->key, key));
-    PL_ASSERT(curr_level == 0);
-    PL_ASSERT(!curr_tower->is_edge_tower);
-
-    // If we end at last node, return immediately
-    if (curr_tower->next_node[0]->is_edge_tower) return curr_tower;
-
-    while (!curr_tower->next_node[0]->is_edge_tower && // tower is not last tower
-           key_cmp_less_equal(key, curr_tower->next_node[0]) // next tower is less or equal
-        ) {
-      curr_tower = curr_tower->next_node[0];
-    }
-
-    PL_ASSERT(!curr_tower->is_edge_tower);
-    PL_ASSERT(key_cmp_less_equal(curr_tower->key, key));
-    return curr_tower;
   }
 
   /*
@@ -385,9 +410,9 @@ class SkipList {
    */
   Node *CreateNode() {
     Node *cur_node = new Node{};
-    cur_node->key = KeyType{};
-    cur_node->value = ValueType{};
-    cur_node->deleted = false;
+    cur_node->kv_p = std::make_pair(KeyType{}, ValueType{});
+    cur_node->is_edge_tower = false;
+    cur_node->next_node = {};
     return cur_node;
   }
 
@@ -403,23 +428,31 @@ class SkipList {
    * node.key = key and node.value != value (only if duplicates supported)
    */
   inline bool NodeLessThan(KeyType key, ValueType value, Node node) {
-    return (!node.is_edge_tower && (key_cmp_less(node.key, key)
-                || (support_duplicates_ && key_cmp_eq(node.key, key)
-                    && !value_cmp_eq(node.value, value))));
+    return (!node.is_edge_tower && (key_cmp_less(node.kv_p.first, key)
+                || (support_duplicates_ && key_cmp_eq(node.kv_p.first, key)
+                    && !value_cmp_eq(node.kv_p.second, value))));
   }
-  struct Node {
-    // The key
-    KeyType key;
 
-    // Values (vector allows support for duplicates
-    std::vector<ValueType> values;
+  /*
+ * Returns true if node is not end tower and node.key <= key
+ */
+  inline bool NodeLessThanEqual(KeyType key, Node node) {
+    return (!node.is_edge_tower && key_cmp_less_equal(key, node.kv_p.first));
+  }
+
+  // Returns address of a possibly deleted node
+  static inline Node* GetAddress(Node* addr) { return (((size_t)addr % 2) == 1) ? (Node*)((size_t)addr - 1) : addr;}
+
+  // Returns true if node is logically deleted
+  static inline bool IsLogicalDeleted(Node* node) { return (((size_t)(node->next_node[node->next_node.size() - 1])) % 2) == 1;}
+
+  struct Node {
+
+    // Key Value pair
+    KeyValuePair kv_p;
 
     // For each level, store the next node
     std::vector<Node *> next_node;
-
-    // Deleted bit for this node (logically removed)
-    // TODO (steal last bit from next pointer to see deleted bit)
-    bool deleted;
 
     // Denotes if node represents an edge tower
     bool is_edge_tower;
@@ -473,14 +506,43 @@ class SkipList {
      */
     ForwardIterator(SkipList *skip_list) {
 
-      curr_node_ = skip_list->GetRoot()->next_node[0];
+      // Join Epoch
+      auto epoch_node = skip_list->epoch_manager_.JoinEpoch();
+
+      curr_node_ = GetAddress(skip_list->GetRoot()->next_node[0]);
+
+      // Leave epoch
+      skip_list->epoch_manager_.LeaveEpoch(epoch_node);
     }
 
     /*
      * Constructor - Construct an iterator given a key
+     *
+     * The iterator returned will points to a data item whose key is greater than
+     * or equal to the given start key. If such key does not exist then it will
+     * be the smallest key that is greater than start_key
      */
     ForwardIterator(SkipList *skip_list, const KeyType &start_key) {
-      curr_node_ = skip_list->FindNode(start_key);
+
+      // Join Epoch
+      auto epoch_node = skip_list->epoch_manager_.JoinEpoch();
+
+      auto node = skip_list->FindNode(start_key);
+
+      // If we start with start tower, jump to next
+      if (node.is_edge_tower) {
+        node = GetAddress(node.next_node[0]);
+      }
+
+      // Iterate until we find first node greater than or equal to key
+      while (!node->is_edge_tower && skip_list->key_cmp_less(curr_node_->kv_p->first, start_key)) {
+        node = GetAddress(node->next_node[0]);
+      }
+
+      PL_ASSERT(node->is_edge_tower || skip_list->key_cmp_greater_equal(node->kv_p->first, start_key));
+
+      // Leave epoch
+      skip_list->epoch_manager_.LeaveEpoch(epoch_node);
     }
 
     /*
@@ -525,7 +587,14 @@ class SkipList {
     /*
      * Prefix operator++
      */
-    inline ForwardIterator &operator++();
+    inline ForwardIterator &operator++() {
+      if (IsEnd()) {
+        return *this;
+      } else {
+        step_forward();
+        return *this;
+      }
+    }
 
     /*
      * Prefix operator--
@@ -535,7 +604,15 @@ class SkipList {
     /*
      * Postfix operator++
      */
-    inline ForwardIterator operator++(int);
+    inline ForwardIterator operator++(int) {
+      if (IsEnd()) {
+        return *this;
+      } else {
+        auto temp = *this;
+        step_forward();
+        return temp;
+      }
+    }
 
     /*
      * Postfix operator--
@@ -546,12 +623,12 @@ class SkipList {
     * operator * - Return the value reference currently pointed to by this
     * iterator
     */
-    inline const Node &operator*() { return *curr_node_; }
+    inline const KeyValuePair &operator*() { return &(curr_node_->kv_p); }
 
     /*
      * operator -> - Return the value pointer pointed to by this iterator
      */
-    inline const Node *operator->() { return &*curr_node_; }
+    inline const KeyValuePair *operator->() { return &curr_node_->kv_p; }
 
    private:
     /*
@@ -559,33 +636,49 @@ class SkipList {
      */
     void step_forward() {
       PL_ASSERT(!curr_node_->is_edge_tower);
-      curr_node_->next_node[0];
+
+      curr_node_ = GetAddress(curr_node_->next_node[0]);
+
+      // Iterate until we find a non-deleted node
+      while (IsLogicalDeleted(curr_node_)) {
+        curr_node_ = GetAddress(curr_node_->next_node[0]);
+
+        // If we get to end tower, return
+        if (curr_node_->is_edge_tower) return;
+      }
+
+      return;
     }
   };
 
   ///////////////////////////////////////////////////////////////////
   // Key Comparison Member Functions
   ///////////////////////////////////////////////////////////////////
- private:
+ public:
   inline bool key_cmp_less(const KeyType &key1, const KeyType &key2) const {
+    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return key_cmp_obj_(key1, key2);
   }
 
   inline bool key_cmp_equal(const KeyType &key1, const KeyType &key2) const {
+    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return key_eq_obj_(key1, key2);
   }
 
   inline bool key_cmp_greater_equal(const KeyType &key1,
                                     const KeyType &key2) const {
+    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return !key_cmp_less(key1, key2);
   }
 
   inline bool key_cmp_greater(const KeyType &key1, const KeyType &key2) const {
+    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return key_cmp_less(key2, key1);
   }
 
   inline bool key_cmp_less_equal(const KeyType &key1,
                                  const KeyType &key2) const {
+    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return !key_cmp_greater(key1, key2);
   }
 
@@ -595,6 +688,7 @@ class SkipList {
 
   inline bool value_cmp_equal(const ValueType &value1,
                               const ValueType &value2) const {
+    PL_ASSERT(value1 != nullptr && value2 != nullptr);
     return value_eq_obj_(value1, value2);
   }
 };
