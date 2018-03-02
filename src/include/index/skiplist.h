@@ -88,7 +88,9 @@ class SkipList {
    * Insert
    */
   bool Insert(const KeyType &key, const ValueType &value) {
-    std::vector<Node *> parents = FindParents(key);
+    auto epoch = JoinEpoch();
+
+    std::vector<Node *> parents = FindParents(key, val);
 
     Node* new_node = new Node{};
     new_node->is_edge_tower = false;
@@ -106,13 +108,14 @@ class SkipList {
 
         // parent was deleted
         if (next_node % 2 == 1) {
-            parents[current_level] = UpdateParent(root_, current_level, key);
+            parents[current_level] = UpdateParent(root_, current_level, key, value);
             continue;
         }
 
         // Key already inserted
         if (key_cmp_equal(key, next_node->key)) {
             if (current_level == 0) {
+                LeaveEpoch(epoch);
                 return false;
             }
 
@@ -123,7 +126,7 @@ class SkipList {
         // Node inserted after parent
         if (key_cmp_less(next_node->key, key)) {
             parents[current_level] = UpdateParent(parents[current_level],
-                    current_level, key);
+                    current_level, key, value);
             continue;
         }
 
@@ -135,25 +138,35 @@ class SkipList {
         }
     }
 
+    LeaveEpoch(epoch);
     return true;
+  }
+
+  bool Remove(const KeyType &key) {
+    return Remove(key, nullptr);
   }
 
   /*
    * Delete
    */
-  bool Remove(const KeyType &key) {
-    std::vector<Node *> parents = FindParents(key);
+  bool Remove(const KeyType &key, const ValueType &val) {
+
+    auto epoch = JoinEpoch();
+
+    std::vector<Node *> parents = FindParents(key, val);
 
     Node *del_node = parents[0]->next_node[0];
 
     // bottom level parent being deleted
     while (del_node % 2 == 1) {
-        parents[0] = UpdateParent(root_, 0 /* level */, key);
+        parents[0] = UpdateParent(root_, 0 /* level */, key, val);
         del_node = parents[0]->next_node[0];
     }
 
     // Node does not exist
-    if (!keycmp_equal(key, del_node->key)) {
+    if (!keycmp_equal(key, del_node->key) || (support_duplicates_ &&
+                !value_cmp_eq(del_node->value, val))) {
+        LeaveEpoch(epoch);
         return false;
     }
 
@@ -168,6 +181,7 @@ class SkipList {
 
         // node already being deleted
         if (next_node % 2 == 1 && !marked_pointer) {
+            LeaveEpoch(epoch);
             return false;
         }
 
@@ -183,13 +197,14 @@ class SkipList {
 
         // parent node being deleted
         if (next_tmp % 2 == 1) {
-            parents[current_level] = UpdateParent(root_, current_level, key);
+            parents[current_level] = UpdateParent(root_, current_level, key, val);
             continue;
         }
 
         // something inserted after parent
-        if (!keycmp_equal(key, next_tmp->key)) {
-            parents[current_level] = UpdateParent(next_tmp, current_level, key);
+        if (!keycmp_equal(key, next_tmp->key) || (support_duplicates_ &&
+                !value_cmp_eq(del_node->value, val))) {
+            parents[current_level] = UpdateParent(next_tmp, current_level, key, val);
             continue;
         }
 
@@ -200,12 +215,18 @@ class SkipList {
             marked_pointer = false;
         }
     }
+
+    // mark fully deleted node as a garbage node
+    AddGarbageNode(del_node);
+    LeaveEpoch(epoch);
     return true;
   }
 
-  Node *UpdateParent(Node *parent, int level, const KeyType &key) {
+  // TODO: pass values to these functions and fix insert and delete for duplicates
+  // Returns the last node after the current parent that is still before the key
+  Node *UpdateParent(Node *parent, int level, const KeyType &key, const ValueType &val) {
     Node *next_node = parent->next_node[level];
-    while (NodeLessThan(next_node, key)) {
+    while (NodeLessThan(key, val, next_node)) {
         parent = next_node;
         next_node = parent->next_node[level];
     }
@@ -213,7 +234,7 @@ class SkipList {
   }
 
   // returns a vector of Nodes which come directly before the key in each level
-  std::vector<Node *> FindParents(const KeyType &key) {
+  std::vector<Node *> FindParents(const KeyType &key, const ValueType &val) {
     // Node directly before the key in each level
     std::vector<Node *> parents(MAX_TOWER_HEIGHT);
 
@@ -226,7 +247,7 @@ class SkipList {
         next_node = current_node->next_node[current_tower];
 
         // not done traversing
-        if (NodeLessThan(next_node, key)) {
+        if (NodeLessThan(key, val, next_node)) {
             current_node = next_node;
         // found parent of current level
         } else {
@@ -378,12 +399,14 @@ class SkipList {
   ///////////////////////////////////////////////////////////////////
 
   /*
-   * Returns true if node is not end tower and node.key < key
+   * Returns true if node is not end tower and node.key < key or
+   * node.key = key and node.value != value (only if duplicates supported)
    */
-  inline bool NodeLessThan(KeyType key, Node node) {
-    return (!node.is_edge_tower && key_cmp_less(node.key, key));
+  inline bool NodeLessThan(KeyType key, ValueType value, Node node) {
+    return (!node.is_edge_tower && (key_cmp_less(node.key, key)
+                || (support_duplicates_ && key_cmp_eq(node.key, key)
+                    && !value_cmp_eq(node.value, value))));
   }
-
   struct Node {
     // The key
     KeyType key;
