@@ -161,9 +161,9 @@ void SKIPLIST_INDEX_TYPE::Scan(
          scan_itr++) {
       result.push_back(scan_itr->second);
     }
-    if (scan_direction == ScanDirectionType::BACKWARD) {
-      std::reverse(result.begin(), result.end());
-    }
+  }
+  if (scan_direction == ScanDirectionType::BACKWARD) {
+    std::reverse(result.begin(), result.end());
   }
 }
 
