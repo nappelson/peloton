@@ -477,6 +477,7 @@ class SkipList {
             (key_cmp_less(node->kv_p.first, key) ||
              (support_duplicates_ && key_cmp_equal(node->kv_p.first, key) &&
               !value_cmp_equal(node->kv_p.second, value))));
+
   }
 
   /*
