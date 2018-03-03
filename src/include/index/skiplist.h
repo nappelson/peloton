@@ -396,9 +396,10 @@ class SkipList {
       while (
           ((NodeLessThanEqual(key, next_node) &&
             !support_duplicates_) ||  // jump to next node if eligible
-           ((!next_node->is_edge_tower && key_cmp_less(key, next_node->kv_p.first) &&
-            support_duplicates_))) &&  // dont jump if node greater or equal to
-                                      // key
+           ((!next_node->is_edge_tower &&
+             key_cmp_less(key, next_node->kv_p.first) &&
+             support_duplicates_))) &&  // dont jump if node greater or equal to
+                                        // key
           !(key_cmp_equal(key, next_node->kv_p.first) &&
             IsLogicalDeleted(
                 next_node)))  // dont jump if node you're looking for is deleted
@@ -477,7 +478,6 @@ class SkipList {
             (key_cmp_less(node->kv_p.first, key) ||
              (support_duplicates_ && key_cmp_equal(node->kv_p.first, key) &&
               !value_cmp_equal(node->kv_p.second, value))));
-
   }
 
   /*
