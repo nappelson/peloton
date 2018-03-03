@@ -164,11 +164,11 @@ class SkipList {
 
     *predicate_satisfied = false;
 
-    while (!node->is_edge_tower && key_cmp_less_equal(node.kv_p.first, key)) {
+    while (!node->is_edge_tower && key_cmp_less_equal(node->kv_p.first, key)) {
 
       *predicate_satisfied = *predicate_satisfied || predicate(node->kv_p.second);
 
-      node = GetAddress(node.next_node[0]);
+      node = GetAddress(node->next_node[0]);
     }
 
     bool res;
@@ -215,8 +215,8 @@ class SkipList {
     }
 
     // Node does not exist
-    if (!keycmp_equal(key, del_node->kv_p.first) || (support_duplicates_ &&
-                !value_cmp_eq(del_node->kv_p.second, val))) {
+    if (!key_cmp_equal(key, del_node->kv_p.first) || (support_duplicates_ &&
+                !value_cmp_equal(del_node->kv_p.second, val))) {
         epoch_manager_.LeaveEpoch(epoch);
         return false;
     }
@@ -229,7 +229,7 @@ class SkipList {
         Node *next_node = del_node->next_node[current_level];
 
         // node already being deleted
-        if (next_node % 2 == 1 && !marked_pointer) {
+        if ((size_t)next_node % 2 == 1 && !marked_pointer) {
             epoch_manager_.LeaveEpoch(epoch);
             return false;
         }
@@ -246,14 +246,14 @@ class SkipList {
         Node *next_tmp = parents[current_level]->next_node[current_level];
 
         // parent node being deleted
-        if (next_tmp % 2 == 1) {
+        if ((size_t)next_tmp % 2 == 1) {
             parents[current_level] = UpdateParent(root_, current_level, key, val);
             continue;
         }
 
         // something inserted after parent
-        if (!keycmp_equal(key, next_tmp->kv_p.first) || (support_duplicates_ &&
-                !value_cmp_eq(del_node->kv_p.second, val))) {
+        if (!key_cmp_equal(key, next_tmp->kv_p.first) || (support_duplicates_ &&
+                !value_cmp_equal(del_node->kv_p.second, val))) {
             parents[current_level] = UpdateParent(next_tmp, current_level, key, val);
             continue;
         }
@@ -323,7 +323,7 @@ class SkipList {
     Node* node = FindNode(key);
 
     PL_ASSERT(!IsLogicalDeleted(node));
-    PL_ASSERT(!node.is_edge_tower);
+    PL_ASSERT(!node->is_edge_tower);
     if (!key_cmp_equal(node->kv_p.first, key)) {
 
       // Leave Epoch
@@ -355,27 +355,27 @@ class SkipList {
 
     // Search for node
     Node* node = FindNode(key);
-    PL_ASSERT(node.is_edge_tower || key_cmp_less(node->kv_p.first, key));
+    PL_ASSERT(node->is_edge_tower || key_cmp_less(node->kv_p.first, key));
 
     // If we start with start tower, jump to next
-    if (node.is_edge_tower) {
-      node = GetAddress(node.next_node[0]);
+    if (node->is_edge_tower) {
+      node = GetAddress(node->next_node[0]);
     }
 
-    while (!node.is_edge_tower && key_cmp_less_equal(node.kv_p.first, key)) {
+    while (!node->is_edge_tower && key_cmp_less_equal(node->kv_p.first, key)) {
 
-      if (key_cmp_equal(node.kv_p.first, key) &&
-          value_cmp_equal(node.kv_p.second, wanted_value) &&
+      if (key_cmp_equal(node->kv_p.first, key) &&
+          value_cmp_equal(node->kv_p.second, wanted_value) &&
           !IsLogicalDeleted(node)) {
 
-        value = node.kv_p.second;
+        value = node->kv_p.second;
 
         // Leave Epoch
         epoch_manager_.LeaveEpoch(epoch_node);
 
         return true;
       }
-      node = GetAddress(node.next_node[0]);
+      node = GetAddress(node->next_node[0]);
     }
 
     // Leave Epoch
@@ -405,8 +405,7 @@ class SkipList {
         curr_tower = GetAddress(curr_tower->next_node[curr_level]);
       }
 
-      if (key_cmp_equal(curr_tower->key, key) || curr_level == 0) {
-        PL_ASSERT(!(key_cmp_equal(curr_tower->key) && IsLogicalDeleted(curr_tower)));
+      if (key_cmp_equal(curr_tower->kv_p.first, key) || curr_level == 0) {
         return curr_tower;
       }
 
