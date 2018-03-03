@@ -96,7 +96,7 @@ class SkipList {
   bool Insert(const KeyType &key, const ValueType &value) {
     auto epoch = epoch_manager_.JoinEpoch();
 
-    std::vector<Node *> parents = FindParents(key, value);
+    std::vector<Node*> parents = FindParents(key, value);
 
     Node* new_node = new Node{};
     new_node->is_edge_tower = false;
@@ -138,6 +138,7 @@ class SkipList {
         new_node->next_node[current_level] = next_node;
 
         // If CAS succeeds go to next level, otherwise try again
+        //TODO: This line is causing compilation errors and I dont know why the fuck it is
         if (parents[current_level].compare_exchange_strong(next_node, new_node)) {
             current_level++;
         }
@@ -146,6 +147,50 @@ class SkipList {
     epoch_manager_.LeaveEpoch(epoch);
     return true;
   }
+
+  bool ConditionalInsert(const KeyType &key, const ValueType &value,
+                         std::function<bool(const void *)> predicate,
+                         bool *predicate_satisfied) {
+    auto epoch = epoch_manager_.JoinEpoch();
+
+    // Search for node
+    Node* node = FindNode(key);
+    PL_ASSERT(node->is_edge_tower || key_cmp_less(node->kv_p.first, key));
+
+    // If we start with start tower, jump to next
+    if (node->is_edge_tower) {
+      node = GetAddress(node->next_node[0]);
+    }
+
+    *predicate_satisfied = false;
+
+    while (!node->is_edge_tower && key_cmp_less_equal(node.kv_p.first, key)) {
+
+      *predicate_satisfied = *predicate_satisfied || predicate(node->kv_p.second);
+
+      node = GetAddress(node.next_node[0]);
+    }
+
+    bool res;
+    // If predicate was never satisfied, insert
+    if (!(*predicate_satisfied)) {
+      bool insert = Insert(key, value);
+
+      // If KV was already in index, return false
+      if (!insert) {
+        res = false;
+      } else {
+        res = true;
+      }
+    } else {
+      res = false;
+    }
+
+    epoch_manager_.LeaveEpoch(epoch);
+
+    return res;
+  }
+
 
   bool Remove(const KeyType &key) {
     return Remove(key, nullptr);
@@ -214,7 +259,7 @@ class SkipList {
         }
 
         // CAS parents next to del_node's next
-        if (parents[current_level]->next_node[current_level].compare_exchange_strong(
+        if ((parents[current_level]->next_node[current_level]).compare_exchange_strong(
                     del_node, del_node->next_node[current_level] - 1)) {
             current_level--;
             marked_pointer = false;
@@ -239,7 +284,7 @@ class SkipList {
   }
 
   // returns a vector of Nodes which come directly before the key in each level
-  std::vector<Node *> FindParents(const KeyType &key, const ValueType &val) {
+  std::vector<Node*> FindParents(const KeyType &key, const ValueType &val) {
     // Node directly before the key in each level
     std::vector<Node *> parents(MAX_TOWER_HEIGHT);
 
@@ -275,11 +320,11 @@ class SkipList {
     auto epoch_node = epoch_manager_.JoinEpoch();
 
     // Search for node
-    Node node = FindNode(key);
+    Node* node = FindNode(key);
 
     PL_ASSERT(!IsLogicalDeleted(node));
     PL_ASSERT(!node.is_edge_tower);
-    if (!key_cmp_equal(node.kv_p.first, key)) {
+    if (!key_cmp_equal(node->kv_p.first, key)) {
 
       // Leave Epoch
       epoch_manager_.LeaveEpoch(epoch_node);
@@ -287,7 +332,7 @@ class SkipList {
       return false;
     }
 
-    value = node.kv_p.second;
+    value = node->kv_p.second;
 
     // Leave Epoch
     epoch_manager_.LeaveEpoch(epoch_node);
@@ -309,8 +354,8 @@ class SkipList {
     auto epoch_node = epoch_manager_.JoinEpoch();
 
     // Search for node
-    Node node = FindNode(key);
-    PL_ASSERT(node.is_edge_tower || key_cmp_less(node.kv_p.first, key));
+    Node* node = FindNode(key);
+    PL_ASSERT(node.is_edge_tower || key_cmp_less(node->kv_p.first, key));
 
     // If we start with start tower, jump to next
     if (node.is_edge_tower) {
@@ -544,6 +589,8 @@ class SkipList {
       PL_ASSERT(node->is_edge_tower || skip_list->key_cmp_greater_equal(node->kv_p->first, start_key));
 
       // Leave epoch
+      //TODO: Why shouldnt we leave the epoch upon destruction?
+      // Bw_tree does it this way
       skip_list->epoch_manager_.LeaveEpoch(epoch_node);
     }
 
@@ -559,6 +606,7 @@ class SkipList {
 
     /*
     * Destructor
+     * TODO: Why shouldnt we leave the epoch upon destruction?
     */
     ~ForwardIterator() { return; }
 
@@ -823,6 +871,8 @@ class EpochManager {
    * AddGarbageNode()
    */
   void AddGarbageNode(const NodeType *node_ptr) {
+
+    //TODO: Shouldn't this code be inside the while(1)
     auto cur_epoch_node = *cur_epoch_node_itr_;
     GarbageNode *garbage_node_ptr = new GarbageNode;
     garbage_node_ptr->node_ptr = node_ptr;

@@ -16,6 +16,7 @@
 #include "index/scan_optimizer.h"
 #include "statistics/stats_aggregator.h"
 #include "storage/tuple.h"
+#include "index/skiplist.h"
 
 namespace peloton {
 namespace index {
@@ -46,11 +47,20 @@ SKIPLIST_INDEX_TYPE::~SkipListIndex() {}
  * If the key value pair already exists in the map, just return false
  */
 SKIPLIST_TEMPLATE_ARGUMENTS
-bool SKIPLIST_INDEX_TYPE::InsertEntry(
-    UNUSED_ATTRIBUTE const storage::Tuple *key,
-    UNUSED_ATTRIBUTE ItemPointer *value) {
-  bool ret = false;
-  // TODO: Add your implementation here
+bool SKIPLIST_INDEX_TYPE::InsertEntry(const storage::Tuple *key,
+                                      ItemPointer *value) {
+
+  KeyType index_key;
+  index_key.SetFromKey(key);
+
+  bool ret = container.Insert(index_key, value);
+
+  if (ret) {
+    LOG_TRACE("Inserted key: %s - [SUCCESS]", key->GetInfo().c_str());
+  } else {
+    LOG_TRACE("Inserted key: %s - [FAILURE]", key->GetInfo().c_str());
+  }
+
   return ret;
 }
 
@@ -60,11 +70,19 @@ bool SKIPLIST_INDEX_TYPE::InsertEntry(
  * If the key-value pair does not exists yet in the map return false
  */
 SKIPLIST_TEMPLATE_ARGUMENTS
-bool SKIPLIST_INDEX_TYPE::DeleteEntry(
-    UNUSED_ATTRIBUTE const storage::Tuple *key,
-    UNUSED_ATTRIBUTE ItemPointer *value) {
-  bool ret = false;
-  // TODO: Add your implementation here
+bool SKIPLIST_INDEX_TYPE::DeleteEntry(const storage::Tuple *key,
+                                      ItemPointer *value) {
+  KeyType index_key;
+  index_key.SetFromKey(key);
+
+  bool ret = container.Remove(index_key, value);
+
+  if (ret) {
+    LOG_TRACE("Deleted key: %s - [SUCCESS]", key->GetInfo().c_str());
+  } else {
+    LOG_TRACE("Deleted key: %s - [FAILURE]", key->GetInfo().c_str());
+  }
+
   return ret;
 }
 
@@ -73,8 +91,28 @@ bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
     UNUSED_ATTRIBUTE ItemPointer *value,
     UNUSED_ATTRIBUTE std::function<bool(const void *)> predicate) {
-  bool ret = false;
-  // TODO: Add your implementation here
+
+  KeyType index_key;
+  index_key.SetFromKey(key);
+
+  bool predicate_satisfied = false;
+
+  // This function will complete them in one step
+  // predicate will be set to nullptr if the predicate
+  // returns true for some value
+  bool ret = container.ConditionalInsert(index_key, value, predicate,
+                                         &predicate_satisfied);
+
+  // If predicate is not satisfied then we know insertion successes
+  if (predicate_satisfied == false) {
+    // So it should always succeed?
+    assert(ret == true);
+    LOG_TRACE("Cond. Inserted Key: %s - [SUCCESS]", key->GetInfo().c_str());
+  } else {
+    LOG_TRACE("Cond. Inserted Key: %s - [FAILURE]", key->GetInfo().c_str());
+    assert(ret == false);
+  }
+
   return ret;
 }
 
@@ -115,14 +153,14 @@ SKIPLIST_TEMPLATE_ARGUMENTS
 void SKIPLIST_INDEX_TYPE::ScanAllKeys(
     std::vector<ValueType> &result) {
 
-//  auto it = container.Begin();
-//
-//  // scan all keys
-//  while (it.IsEnd() == false) {
-//    result.push_back(it->second);
-//    it++;
-//  }
-//
+  auto it = container.Begin();
+
+  // scan all keys
+  while (it.IsEnd() == false) {
+    result.push_back(it->second);
+    it++;
+  }
+
   return;
 }
 
