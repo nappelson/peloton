@@ -579,18 +579,18 @@ class SkipList {
       auto node = skip_list->FindNode(start_key);
 
       // If we start with start tower, jump to next
-      if (node.is_edge_tower) {
-        node = GetAddress(node.next_node[0]);
+      if (node->is_edge_tower) {
+        node = GetAddress(node->next_node[0]);
       }
 
       // Iterate until we find first node greater than or equal to key
       while (!node->is_edge_tower &&
-             skip_list->key_cmp_less(curr_node_->kv_p->first, start_key)) {
+             skip_list->key_cmp_less(curr_node_->kv_p.first, start_key)) {
         node = GetAddress(node->next_node[0]);
       }
 
       PL_ASSERT(node->is_edge_tower ||
-                skip_list->key_cmp_greater_equal(node->kv_p->first, start_key));
+                skip_list->key_cmp_greater_equal(node->kv_p.first, start_key));
 
       // Leave epoch
       // TODO: Why shouldnt we leave the epoch upon destruction?
