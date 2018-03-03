@@ -111,7 +111,8 @@ class SkipList {
         Node *next_node = parents[current_level]->next_node[current_level];
 
         // parent was deleted
-        if (next_node % 2 == 1) {
+        //TODO: Verify we need to cast next_node to (size_t)
+        if ((size_t)next_node % 2 == 1) {
             parents[current_level] = UpdateParent(root_, current_level, key, value);
             continue;
         }
@@ -162,7 +163,8 @@ class SkipList {
     Node *del_node = parents[0]->next_node[0];
 
     // bottom level parent being deleted
-    while (del_node % 2 == 1) {
+    //TODO: Verify we need to cast del_node to (size_t)
+    while ((size_t)del_node % 2 == 1) {
         parents[0] = UpdateParent(root_, 0 /* level */, key, val);
         del_node = parents[0]->next_node[0];
     }
@@ -427,10 +429,10 @@ class SkipList {
    * Returns true if node is not end tower and node.key < key or
    * node.key = key and node.value != value (only if duplicates supported)
    */
-  inline bool NodeLessThan(KeyType key, ValueType value, Node node) {
-    return (!node.is_edge_tower && (key_cmp_less(node.kv_p.first, key)
-                || (support_duplicates_ && key_cmp_eq(node.kv_p.first, key)
-                    && !value_cmp_eq(node.kv_p.second, value))));
+  inline bool NodeLessThan(KeyType key, ValueType value, Node* node) {
+    return (!node->is_edge_tower && (key_cmp_less(node->kv_p.first, key)
+                || (support_duplicates_ && key_cmp_equal(node->kv_p.first, key)
+                    && !value_cmp_equal(node->kv_p.second, value))));
   }
 
   /*
@@ -558,7 +560,7 @@ class SkipList {
     /*
     * Destructor
     */
-    ~ForwardIterator();
+    ~ForwardIterator() { return; }
 
     /*
      * True if End of Iterator
@@ -603,12 +605,13 @@ class SkipList {
 
     /*
      * Postfix operator++
+     * TODO: Maybe remove the '*', i was getting a linker error without it
      */
-    inline ForwardIterator operator++(int) {
+    inline ForwardIterator *operator++(int) {
       if (IsEnd()) {
-        return *this;
+        return this;
       } else {
-        auto temp = *this;
+        auto temp = this;
         step_forward();
         return temp;
       }
@@ -656,29 +659,24 @@ class SkipList {
   ///////////////////////////////////////////////////////////////////
  public:
   inline bool key_cmp_less(const KeyType &key1, const KeyType &key2) const {
-    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return key_cmp_obj_(key1, key2);
   }
 
   inline bool key_cmp_equal(const KeyType &key1, const KeyType &key2) const {
-    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return key_eq_obj_(key1, key2);
   }
 
   inline bool key_cmp_greater_equal(const KeyType &key1,
                                     const KeyType &key2) const {
-    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return !key_cmp_less(key1, key2);
   }
 
   inline bool key_cmp_greater(const KeyType &key1, const KeyType &key2) const {
-    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return key_cmp_less(key2, key1);
   }
 
   inline bool key_cmp_less_equal(const KeyType &key1,
                                  const KeyType &key2) const {
-    PL_ASSERT(key1 != nullptr && key2 != nullptr);
     return !key_cmp_greater(key1, key2);
   }
 
@@ -688,7 +686,6 @@ class SkipList {
 
   inline bool value_cmp_equal(const ValueType &value1,
                               const ValueType &value2) const {
-    PL_ASSERT(value1 != nullptr && value2 != nullptr);
     return value_eq_obj_(value1, value2);
   }
 };
