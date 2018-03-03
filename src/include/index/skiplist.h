@@ -399,7 +399,7 @@ class SkipList {
            (NodeLessThan(key, next_node) &&
             support_duplicates_)) &&  // dont jump if node greater or equal to
                                       // key
-          !(key_cmp_equal(key, next_node) &&
+          !(key_cmp_equal(key, next_node->kv_p.first) &&
             IsLogicalDeleted(
                 next_node)))  // dont jump if node you're looking for is deleted
       {
@@ -482,8 +482,8 @@ class SkipList {
   /*
  * Returns true if node is not end tower and node.key <= key
  */
-  inline bool NodeLessThanEqual(KeyType key, Node node) {
-    return (!node.is_edge_tower && key_cmp_less_equal(key, node.kv_p.first));
+  inline bool NodeLessThanEqual(KeyType key, Node *node) {
+    return (!node->is_edge_tower && key_cmp_less_equal(key, node->kv_p.first));
   }
 
   // Returns address of a possibly deleted node
