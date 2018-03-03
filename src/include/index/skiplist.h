@@ -104,7 +104,7 @@ class SkipList {
     new_node->next_node = std::vector<Node *>(node_level);
 
     while (current_level < node_level) {
-      Node *next_node = parents[current_level]->next_node[current_level];
+      Node *next_node = GetAddress(parents[current_level]->next_node.at(current_level));
 
       // parent was deleted
       // TODO: Verify we need to cast next_node to (size_t)
@@ -131,7 +131,7 @@ class SkipList {
         continue;
       }
 
-      new_node->next_node[current_level] = next_node;
+      new_node->next_node.at(current_level) = next_node;
 
       // If CAS succeeds go to next level, otherwise try again
       // TODO: This line is causing compilation errors and I dont know why the
@@ -169,19 +169,10 @@ class SkipList {
       node = GetAddress(node->next_node[0]);
     }
 
-    bool res;
+    bool res = false;
     // If predicate was never satisfied, insert
     if (!(*predicate_satisfied)) {
-      bool insert = Insert(key, value);
-
-      // If KV was already in index, return false
-      if (!insert) {
-        res = false;
-      } else {
-        res = true;
-      }
-    } else {
-      res = false;
+      res = Insert(key, value);
     }
 
     epoch_manager_.LeaveEpoch(epoch);
@@ -220,7 +211,7 @@ class SkipList {
     bool marked_pointer = false;
 
     while (current_level >= 0) {
-      Node *next_node = del_node->next_node[current_level];
+      Node *next_node = del_node->next_node.at(current_level);
 
       // node already being deleted
       if ((size_t)next_node % 2 == 1 && !marked_pointer) {
@@ -232,14 +223,14 @@ class SkipList {
       // TODO: Verify next_node + 1 works as intended (may need to be
       // (Node*)((size_t)next_node + 1)
       if (!marked_pointer &&
-          !__sync_bool_compare_and_swap(&(del_node->next_node[current_level]),
+          !__sync_bool_compare_and_swap(&(del_node->next_node.at(current_level)),
                                         next_node, next_node + 1)) {
         continue;
       }
 
       marked_pointer = true;
 
-      Node *next_tmp = parents[current_level]->next_node[current_level];
+      Node *next_tmp = parents[current_level]->next_node.at(current_level);
 
       // parent node being deleted
       if ((size_t)next_tmp % 2 == 1) {
@@ -258,8 +249,8 @@ class SkipList {
 
       // CAS parents next to del_node's next
       if (__sync_bool_compare_and_swap(
-              &(parents[current_level]->next_node[current_level]), del_node,
-              del_node->next_node[current_level] - 1)) {
+              &(parents[current_level]->next_node.at(current_level)), del_node,
+              del_node->next_node.at(current_level) - 1)) {
         current_level--;
         marked_pointer = false;
       }
@@ -271,20 +262,20 @@ class SkipList {
     return true;
   }
 
-  // TODO: pass values to these functions and fix insert and delete for
-  // duplicates
   // Returns the last node after the current parent that is still before the key
   Node *UpdateParent(Node *parent, int level, const KeyType &key,
                      const ValueType &val) {
-    Node *next_node = parent->next_node[level];
+    Node *next_node = GetAddress(parent->next_node.at(level));
     while (NodeLessThan(key, val, next_node)) {
       parent = next_node;
-      next_node = parent->next_node[level];
+      next_node = GetAddress(parent->next_node.at(level));
     }
     return parent;
   }
 
   // returns a vector of Nodes which come directly before the key in each level
+  // first finds the nodes which come before the key, and then will increment each
+  // until it is directly before the key/value pair
   std::vector<Node *> FindParents(const KeyType &key, const ValueType &val) {
     // Node directly before the key in each level
     std::vector<Node *> parents(MAX_TOWER_HEIGHT);
@@ -295,14 +286,27 @@ class SkipList {
 
     // parent of one level is at least the parent of the level above
     while (current_tower >= 0) {
-      next_node = current_node->next_node[current_tower];
+      next_node = GetAddress(current_node->next_node.at(current_tower));
 
       // not done traversing
-      if (NodeLessThan(key, val, next_node)) {
+      if (NodeLessThan(key, next_node)) {
         current_node = next_node;
         // found parent of current level
       } else {
-        parents[current_tower] = current_node;
+        parents.at(current_tower) = current_node;
+        current_tower--;
+      }
+    }
+
+    current_tower = MAX_TOWER_HEIGHT - 1;
+    current_node = parents.at(current_tower);
+
+    while (current_tower >= 0) {
+      next_node = GetAddress(parents.at(current_tower)->next_node.at(current_tower));
+
+      if (NodeLessThan(key, val, next_node)) {
+        parents.at(current_tower) = next_node;
+      } else {
         current_tower--;
       }
     }
@@ -478,6 +482,13 @@ class SkipList {
             (key_cmp_less(node->kv_p.first, key) ||
              (support_duplicates_ && key_cmp_equal(node->kv_p.first, key) &&
               !value_cmp_equal(node->kv_p.second, value))));
+  }
+
+  /*
+   * Returns true if node is not end tower and node.key < key
+   */
+  inline bool NodeLessThan(KeyType key, Node *node) const {
+    return (!node->is_edge_tower && key_cmp_less(node->kv_p.first, key));
   }
 
   /*
