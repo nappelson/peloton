@@ -31,7 +31,6 @@ SKIPLIST_INDEX_TYPE::SkipListIndex(IndexMetadata *metadata)
       equals{},
 
       container{comparator, equals} {
-
   // TODO: I think this is how we decide whether to support duplicate keys
   container.SetSupportDuplicates(!metadata->HasUniqueKeys());
 
@@ -49,7 +48,6 @@ SKIPLIST_INDEX_TYPE::~SkipListIndex() {}
 SKIPLIST_TEMPLATE_ARGUMENTS
 bool SKIPLIST_INDEX_TYPE::InsertEntry(const storage::Tuple *key,
                                       ItemPointer *value) {
-
   KeyType index_key;
   index_key.SetFromKey(key);
 
@@ -91,7 +89,6 @@ bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
     UNUSED_ATTRIBUTE ItemPointer *value,
     UNUSED_ATTRIBUTE std::function<bool(const void *)> predicate) {
-
   KeyType index_key;
   index_key.SetFromKey(key);
 
@@ -128,8 +125,46 @@ void SKIPLIST_INDEX_TYPE::Scan(
     UNUSED_ATTRIBUTE ScanDirectionType scan_direction,
     UNUSED_ATTRIBUTE std::vector<ValueType> &result,
     UNUSED_ATTRIBUTE const ConjunctionScanPredicate *csp_p) {
-  // TODO: Add your implementation here
-  return;
+  if (scan_direction == ScanDirectionType::INVALID) {
+    throw Exception("Invalid scan direction \n");
+  }
+
+  LOG_TRACE("Scan() Point Query = %d; Full Scan = %d ", csp_p->IsPointQuery(),
+            csp_p->IsFullIndexScan());
+
+  if (csp_p->IsPointQuery()) {
+    // point query
+    const auto point_query_key_p = csp_p->GetPointQueryKey();
+
+    KeyType point_query_key;
+    point_query_key.SetFromKey(point_query_key_p);
+
+    const auto node = container.FindNode(point_query_key);
+    result.push_back(node->kv_p.second);
+  } else if (csp_p->IsFullIndexScan()) {
+    // full scan
+    for (auto scan_itr = container.Begin(); !scan_itr.IsEnd(); scan_itr++) {
+      result.push_back(scan_itr->second);
+    }
+  } else {
+    const auto low_key_p = csp_p->GetLowKey();
+    const auto high_key_p = csp_p->GetHighKey();
+
+    KeyType index_low_key;
+    KeyType index_high_key;
+    index_low_key.SetFromKey(low_key_p);
+    index_high_key.SetFromKey(high_key_p);
+
+    for (auto scan_itr = container.Begin(index_low_key);
+         !scan_itr.IsEnd() &&
+             container.key_cmp_less_equal(scan_itr->first, index_high_key);
+         scan_itr++) {
+      result.push_back(scan_itr->second);
+    }
+    if (scan_direction == ScanDirectionType::BACKWARD) {
+      std::reverse(result.begin(), result.end());
+    }
+  }
 }
 
 /*
@@ -145,31 +180,49 @@ void SKIPLIST_INDEX_TYPE::ScanLimit(
     UNUSED_ATTRIBUTE std::vector<ValueType> &result,
     UNUSED_ATTRIBUTE const ConjunctionScanPredicate *csp_p,
     UNUSED_ATTRIBUTE uint64_t limit, UNUSED_ATTRIBUTE uint64_t offset) {
-  // TODO: Add your implementation here
-  return;
+  if (!csp_p->IsPointQuery() && limit == 1 && offset == 0) {
+    const auto low_key_p = csp_p->GetLowKey();
+    const auto high_key_p = csp_p->GetHighKey();
+
+    LOG_TRACE("ScanLimit() special case (limit = 1; offset = 0; ASCENDING): %s",
+              low_key_p->GetInfo().c_str());
+
+    KeyType index_low_key;
+    KeyType index_high_key;
+    index_low_key.SetFromKey(low_key_p);
+    index_high_key.SetFromKey(high_key_p);
+
+    auto scan_itr = container.Begin(index_low_key);
+    if (!scan_itr.IsEnd() &&
+        container.key_cmp_less_equal(scan_itr->first, index_high_key)) {
+      result.push_back(scan_itr->second);
+    } else {
+      Scan(value_list, tuple_column_id_list, expr_list, scan_direction, result,
+           csp_p);
+    }
+  }
 }
 
 SKIPLIST_TEMPLATE_ARGUMENTS
-void SKIPLIST_INDEX_TYPE::ScanAllKeys(
-    std::vector<ValueType> &result) {
-
+void SKIPLIST_INDEX_TYPE::ScanAllKeys(std::vector<ValueType> &result) {
   auto it = container.Begin();
 
   // scan all keys
-  while (it.IsEnd() == false) {
+  while (!it.IsEnd()) {
     result.push_back(it->second);
     it++;
   }
-
-  return;
 }
 
 SKIPLIST_TEMPLATE_ARGUMENTS
 void SKIPLIST_INDEX_TYPE::ScanKey(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
     UNUSED_ATTRIBUTE std::vector<ValueType> &result) {
-  // TODO: Add your implementation here
-  return;
+  KeyType index_key;
+  index_key.SetFromKey(key);
+
+  auto node = container.FindNode(index_key);
+  result.push_back(node->kv_p.second);
 }
 
 SKIPLIST_TEMPLATE_ARGUMENTS
