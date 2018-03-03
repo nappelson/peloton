@@ -395,9 +395,9 @@ class SkipList {
       auto next_node = GetAddress(curr_tower->next_node[curr_level]);
       while (
           ((NodeLessThanEqual(key, next_node) &&
-            !support_duplicates_) ||  // jump to next node if eligeble
-           (NodeLessThan(key, next_node) &&
-            support_duplicates_)) &&  // dont jump if node greater or equal to
+            !support_duplicates_) ||  // jump to next node if eligible
+           ((!next_node->is_edge_tower && key_cmp_less(key, next_node->kv_p.first) &&
+            support_duplicates_))) &&  // dont jump if node greater or equal to
                                       // key
           !(key_cmp_equal(key, next_node->kv_p.first) &&
             IsLogicalDeleted(
@@ -472,7 +472,7 @@ class SkipList {
    * Returns true if node is not end tower and node.key < key or
    * node.key = key and node.value != value (only if duplicates supported)
    */
-  inline bool NodeLessThan(KeyType key, ValueType value, Node *node) {
+  inline bool NodeLessThan(KeyType key, ValueType value, Node *node) const {
     return (!node->is_edge_tower &&
             (key_cmp_less(node->kv_p.first, key) ||
              (support_duplicates_ && key_cmp_equal(node->kv_p.first, key) &&
@@ -483,7 +483,7 @@ class SkipList {
   /*
  * Returns true if node is not end tower and node.key <= key
  */
-  inline bool NodeLessThanEqual(KeyType key, Node *node) {
+  inline bool NodeLessThanEqual(KeyType key, Node *node) const {
     return (!node->is_edge_tower && key_cmp_less_equal(key, node->kv_p.first));
   }
 
