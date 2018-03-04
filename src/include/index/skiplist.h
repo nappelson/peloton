@@ -114,7 +114,8 @@ class SkipList {
       }
 
       // Key already inserted
-      if (key_cmp_equal(key, next_node->kv_p.first)) {
+      if (key_cmp_equal(key, next_node->kv_p.first) && (!support_duplicates_ ||
+                  value_cmp_equal(value, next_node->kv_p.second))) {
         if (current_level == 0) {
           epoch_manager_.LeaveEpoch(epoch);
           return false;
