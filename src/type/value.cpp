@@ -369,9 +369,9 @@ const std::string Value::GetInfo() const {
 }
 
 bool Value::CheckComparable(const Value &o) const {
-  LOG_TRACE("Checking whether '%s' is comparable to '%s'",
-            TypeIdToString(GetTypeId()).c_str(),
-            TypeIdToString(o.GetTypeId()).c_str());
+//  LOG_TRACE("Checking whether '%s' is comparable to '%s'",
+//            TypeIdToString(GetTypeId()).c_str(),
+//            TypeIdToString(o.GetTypeId()).c_str());
   switch (GetTypeId()) {
     case TypeId::BOOLEAN:
       switch (o.GetTypeId()) {

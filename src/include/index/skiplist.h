@@ -271,6 +271,8 @@ class SkipList {
       }
     }
 
+    PrintSkipList();
+
     // mark fully deleted node as a garbage node
     epoch_manager_.AddGarbageNode(del_node);
     epoch_manager_.LeaveEpoch(epoch);
@@ -478,19 +480,6 @@ class SkipList {
 
               !(key_cmp_equal(key, next_node->kv_p.first) && IsLogicalDeleted(next_node)))  // dont jump if node you're looking for is deleted
       {
-//        if (!curr_tower->is_edge_tower && !curr_tower->is_edge_tower) {
-//          PL_ASSERT(!(!support_duplicates_ && key_cmp_equal(curr_tower->kv_p.first, next_node->kv_p.first)));
-//          LOG_DEBUG("key_cmp_less(%s,%s) = %d", curr_tower->kv_p.first.GetInfo().c_str(),
-//                    next_node->kv_p.first.GetInfo().c_str(), key_cmp_less(curr_tower->kv_p.first, next_node->kv_p.first));
-//          LOG_DEBUG("key_cmp_equal(%s,%s) = %d", curr_tower->kv_p.first.GetInfo().c_str(),
-//                    next_node->kv_p.first.GetInfo().c_str(), key_cmp_equal(curr_tower->kv_p.first, next_node->kv_p.first));
-//          LOG_DEBUG("Jumping from tower %s to tower %s", curr_tower->kv_p.first.GetInfo().c_str(), next_node->kv_p.first.GetInfo().c_str());
-//        } else {
-//          PL_ASSERT(curr_tower->is_edge_tower && !next_node->is_edge_tower);
-//          LOG_DEBUG("Jumping from start tower to tower %s",next_node->kv_p.first.GetInfo().c_str());
-//        }
-
-
         curr_tower = next_node;
         next_node = GetAddress(curr_tower->next_node[curr_level]);
       }
@@ -499,11 +488,11 @@ class SkipList {
           || curr_level == 0) {
         return curr_tower;
       }
-      if (curr_tower->is_edge_tower) {
-        LOG_DEBUG("On start tower | level = %d | search_key = %s", curr_level, key.GetInfo().c_str());
-      } else {
-        LOG_DEBUG("On tower = %s | level = %d | search_key = %s", curr_tower->kv_p.first.GetInfo().c_str(), curr_level, key.GetInfo().c_str());
-      }
+//      if (curr_tower->is_edge_tower) {
+//        LOG_DEBUG("On start tower | level = %d | search_key = %s", curr_level, key.GetInfo().c_str());
+//      } else {
+//        LOG_DEBUG("On tower = %s | level = %d | search_key = %s", curr_tower->kv_p.first.GetInfo().c_str(), curr_level, key.GetInfo().c_str());
+//      }
       curr_level--;
     }
   }
@@ -612,7 +601,9 @@ class SkipList {
     printf("----- Start Tower -----\n");
     Node* curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
     while (!curr_node_->is_edge_tower) {
-      printf("Key: %s | Height %zu\n", curr_node_->kv_p.first.GetInfo().c_str(), curr_node_->next_node.size());
+      if (!IsLogicalDeleted(curr_node_)) {
+        printf("Key: %s | Height %zu\n", curr_node_->kv_p.first.GetInfo().c_str(), curr_node_->next_node.size());
+      }
       curr_node_ = GetAddress(curr_node_->next_node[0]);
     }
     printf("------ End Tower ------\n");
@@ -1017,6 +1008,7 @@ class EpochManager {
    */
   void AddGarbageNode(const NodeType *node_ptr) {
     // TODO: Shouldn't this code be inside the while(1)
+    LOG_DEBUG("Adding garbage node with key : %s", node_ptr->kv_p.first.GetInfo().c_str());
     auto cur_epoch_node = *cur_epoch_node_itr_;
     GarbageNode *garbage_node_ptr = new GarbageNode;
     garbage_node_ptr->node_ptr = node_ptr;
@@ -1045,6 +1037,7 @@ class EpochManager {
    * ClearEpoch()
    */
   void ClearEpoch() {
+    LOG_DEBUG("Clearing Epoch");
     while (1) {
       if (epoch_node_list_.begin() == cur_epoch_node_itr_) {
         LOG_TRACE("Current epoch is head epoch. Do not clean");

@@ -144,6 +144,7 @@ void TestingIndexUtil::UniqueKeyDeleteTest(const IndexType index_type) {
   LOG_DEBUG("INDEX VALUE CONTENTS AFTER DELETE:\n%s",
            index::IndexUtil::Debug(index.get()).c_str());
 
+  LOG_DEBUG("Fuck");
   // Checks
   std::unique_ptr<storage::Tuple> key0(new storage::Tuple(key_schema, true));
   std::unique_ptr<storage::Tuple> key1(new storage::Tuple(key_schema, true));
@@ -842,6 +843,7 @@ void TestingIndexUtil::DeleteHelper(index::Index *index,
     index->DeleteEntry(key2.get(), TestingIndexUtil::item2.get());
     index->DeleteEntry(key3.get(), TestingIndexUtil::item1.get());
     index->DeleteEntry(key4.get(), TestingIndexUtil::item1.get());
+    LOG_DEBUG("Deleted all keys");
 
     // should be no key0
     // key1 item 0 1 2
