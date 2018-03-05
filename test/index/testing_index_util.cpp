@@ -763,7 +763,7 @@ void TestingIndexUtil::InsertHelper(index::Index *index,
     key4->SetValue(0, type::ValueFactory::GetIntegerValue(500 * scale_itr),
                    pool);
     key4->SetValue(
-        1, type::ValueFactory::GetVarcharValue(StringUtil::Repeat("e", 10)),
+        1, type::ValueFactory::GetVarcharValue(StringUtil::Repeat("e", 1000)),
         pool);
     keynonce->SetValue(0, type::ValueFactory::GetIntegerValue(1000 * scale_itr),
                        pool);
