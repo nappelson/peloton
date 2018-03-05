@@ -427,7 +427,8 @@ class SkipList {
         curr_tower = GetAddress(curr_tower->next_node[curr_level]);
       }
 
-      if (key_cmp_equal(curr_tower->kv_p.first, key) || curr_level == 0) {
+      if ((!curr_tower->is_edge_tower && key_cmp_equal(curr_tower->kv_p.first, key))
+          || curr_level == 0) {
         return curr_tower;
       }
 
