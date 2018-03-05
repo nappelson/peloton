@@ -412,31 +412,44 @@ class SkipList {
     */
   void GetValue(const KeyType &search_key, std::vector<ValueType> &value_list) {
 
-   auto epoch_node = epoch_manager_.JoinEpoch();
+     auto epoch_node = epoch_manager_.JoinEpoch();
 
-   auto curr_node = FindNode(search_key);
+     PrintSkipList();
+     PL_ASSERT(IsSorted());
 
-   if (!support_duplicates_) {
+     auto curr_node = FindNode(search_key);
 
-     if (!curr_node->is_edge_tower && key_cmp_equal(search_key, curr_node->kv_p.first)) {
-       value_list.push_back(curr_node->kv_p.second);
+     if (curr_node->is_edge_tower) {
+       LOG_DEBUG("Starting scan with start tower");
+     } else {
+       LOG_DEBUG("Starting scan on key: %s", curr_node->kv_p.first.GetInfo().c_str());
      }
-   } else {
-     PL_ASSERT(curr_node->is_edge_tower || NodeLessThan(search_key, curr_node));
 
-     curr_node = GetAddress(curr_node->next_node[0]);
+     if (!support_duplicates_) {
 
-     while (NodeLessThanEqual(search_key, curr_node)) {
+       if (!curr_node->is_edge_tower && key_cmp_equal(search_key, curr_node->kv_p.first)) {
+         value_list.push_back(curr_node->kv_p.second);
+       }
+     } else {
+       PL_ASSERT(curr_node->is_edge_tower || NodeLessThan(search_key, curr_node));
 
-       PL_ASSERT(key_cmp_equal(search_key, curr_node->kv_p.first));
-       value_list.push_back(curr_node->kv_p.second);
        curr_node = GetAddress(curr_node->next_node[0]);
-     }
-   }
 
-   epoch_manager_.LeaveEpoch(epoch_node);
-   return;
-  }
+
+       while (!curr_node->is_edge_tower && key_cmp_equal(search_key, curr_node->kv_p.first)) {
+
+         LOG_DEBUG("Adding to value_list: %s", curr_node->kv_p.first.GetInfo().c_str());
+         PL_ASSERT(IsSorted());
+         PL_ASSERT(!key_cmp_less(curr_node->kv_p.first, search_key));
+         PL_ASSERT(key_cmp_equal(search_key, curr_node->kv_p.first));
+         value_list.push_back(curr_node->kv_p.second);
+         curr_node = GetAddress(curr_node->next_node[0]);
+       }
+     }
+
+     epoch_manager_.LeaveEpoch(epoch_node);
+     return;
+    }
 
 
 
@@ -457,21 +470,25 @@ class SkipList {
       while (
           (!next_node->is_edge_tower) && // dont jump if next node is end tower
 
-          ((NodeLessThanEqual(key, next_node) && !support_duplicates_) ||  // jump to next node if eligible
-           ((!next_node->is_edge_tower && key_cmp_less(key, next_node->kv_p.first) &&  support_duplicates_))) &&  // dont jump if node greater or equal to
+          ((!support_duplicates_ && NodeLessThanEqual(key, next_node)) ||  // jump to next node if eligible
+           ((support_duplicates_ && NodeLessThan(key, next_node)))) &&  // dont jump if node greater or equal to
                                         // key
-          !(key_cmp_equal(key, next_node->kv_p.first) &&
-            IsLogicalDeleted(
-                next_node)))  // dont jump if node you're looking for is deleted
+
+              !(key_cmp_equal(key, next_node->kv_p.first) && IsLogicalDeleted(next_node)))  // dont jump if node you're looking for is deleted
       {
         curr_tower = next_node;
+        next_node = GetAddress(curr_tower->next_node[curr_level]);
       }
 
       if ((!curr_tower->is_edge_tower && key_cmp_equal(curr_tower->kv_p.first, key))
           || curr_level == 0) {
         return curr_tower;
       }
-
+//      if (curr_tower->is_edge_tower) {
+//        LOG_DEBUG("On start tower | level = %d | search_key = %s", curr_level, key.GetInfo().c_str());
+//      } else {
+//        LOG_DEBUG("On tower = %s | level = %d | search_key = %s", curr_tower->kv_p.first.GetInfo().c_str(), curr_level, key.GetInfo().c_str());
+//      }
       curr_level--;
     }
   }
@@ -585,6 +602,28 @@ class SkipList {
     }
     printf("------ End Tower ------\n");
 
+  }
+
+  bool IsSorted() {
+    auto node = GetAddress(root_);
+    PL_ASSERT(node->is_edge_tower);
+    node = GetAddress(node->next_node[0]);
+    if (node->is_edge_tower) return true;
+
+    while (!node->is_edge_tower) {
+
+      auto next_node = GetAddress(node->next_node[0]);
+      if (!next_node->is_edge_tower &&
+          key_cmp_greater(node->kv_p.first, next_node->kv_p.first)) {
+        LOG_DEBUG("FAIL - %s > %s", node->kv_p.first.GetInfo().c_str(), next_node->kv_p.first.GetInfo().c_str());
+        return false;
+      }
+      node = GetAddress(node->next_node[0]);
+    }
+
+    PL_ASSERT(node->is_edge_tower);
+    LOG_DEBUG("Is sorted - True");
+    return true;
   }
 
   struct Node {

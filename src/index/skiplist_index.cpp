@@ -221,6 +221,9 @@ void SKIPLIST_INDEX_TYPE::ScanKey(
   KeyType index_key;
   index_key.SetFromKey(key);
 
+  LOG_TRACE("Scanning for key %s", key->GetInfo().c_str());
+
+
   // This function in BwTree fills a given vector
   container.GetValue(index_key, result);
 
