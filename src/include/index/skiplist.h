@@ -38,6 +38,9 @@ class EpochManager;
 // 0
 #define MAX_TOWER_HEIGHT 32
 
+// Used to mask pointers (only first 48 bits are used in the pointer)
+#define POINTER_MASK (((intptr_t) 1) << ((intptr_t) 49))
+
 /*
  * SKIPLIST_TEMPLATE_ARGUMENTS - Save some key strokes
  */
@@ -73,10 +76,12 @@ class SkipList {
     Node *start = new Node{};
     start->next_node = {};
     start->is_edge_tower = true;
+    start->inserted = true;
 
     Node *end = new Node{};
     end->next_node = {};
     end->is_edge_tower = true;
+    end->inserted = true;
 
     for (int i = 0; i < MAX_TOWER_HEIGHT; i++) {
       start->next_node.push_back(end);
@@ -99,6 +104,7 @@ class SkipList {
     Node *new_node = new Node{};
     new_node->is_edge_tower = false;
     new_node->kv_p = std::make_pair(key, value);
+    new_node->inserted = false;
 
     unsigned int node_level = generate_level() % MAX_TOWER_HEIGHT;
     unsigned int current_level = 0;
@@ -107,11 +113,10 @@ class SkipList {
 
     while (current_level < node_level) {
       Node *next_node =
-          GetAddress(parents[current_level]->next_node.at(current_level));
+          parents[current_level]->next_node.at(current_level);
 
       // parent was deleted
-      // TODO: Verify we need to cast next_node to (size_t)
-      if ((size_t)next_node % 2 == 1) {
+      if (IsMarked(next_node)) {
         parents[current_level] = UpdateParent(root_, current_level, key, value);
         continue;
       }
@@ -137,14 +142,15 @@ class SkipList {
       new_node->next_node.at(current_level) = next_node;
 
       // If CAS succeeds go to next level, otherwise try again
-      // TODO: This line is causing compilation errors and I dont know why the
-      // fuck it is
       if (__sync_bool_compare_and_swap(
                   &parents[current_level]->next_node[current_level],
                     next_node, new_node)) {
         current_level++;
       }
     }
+
+    // allow the node to be deleted
+    new_node->inserted = true;
 
     epoch_manager_.LeaveEpoch(epoch);
     return true;
@@ -202,8 +208,7 @@ class SkipList {
       del_node = parents[0]->next_node[0];
 
       // bottom level parent being deleted
-      // TODO: Verify we need to cast del_node to (size_t)
-      while ((size_t)del_node % 2 == 1) {
+      while (IsMarked(del_node)) {
         parents[0] = UpdateParent(root_, 0 /* level */, key, val);
         del_node = parents[0]->next_node[0];
       }
@@ -214,13 +219,19 @@ class SkipList {
       }
 
       // Node does not exist
-      if (NodeLessThan(key, del_node)) {
+      if (!NodeLessThan(key, del_node)) {
         epoch_manager_.LeaveEpoch(epoch);
         return false;
       }
 
       parents[0] = UpdateParent(parents[0], 0 /* level */, key, val);
     } while (true);
+
+    // Node has not been fully inserted so is not available for deletion
+    if (!del_node->inserted) {
+        epoch_manager_.LeaveEpoch(epoch);
+        return false;
+    }
 
     int current_level = del_node->next_node.size() - 1;
 
@@ -230,19 +241,19 @@ class SkipList {
       Node *next_node = del_node->next_node.at(current_level);
 
       // node already being deleted
-      if ((size_t)next_node % 2 == 1 && !marked_pointer) {
+      if (!marked_pointer && IsMarked(next_node)) {
         epoch_manager_.LeaveEpoch(epoch);
         return false;
       }
 
       // mark the next pointer so future nodes know it is being deleted
-      // TODO: Verify next_node + 1 works as intended (may need to be
-      // (Node*)((size_t)next_node + 1)
-      if (!marked_pointer &&
-          !__sync_bool_compare_and_swap(
+      if (!marked_pointer) {
+          Node *marked_node = MaskPointer(next_node);
+          if (!__sync_bool_compare_and_swap(
               &(del_node->next_node.at(current_level)), next_node,
-              next_node + 1)) {
-        continue;
+              marked_node)) {
+            continue;
+          }
       }
 
       marked_pointer = true;
@@ -250,9 +261,15 @@ class SkipList {
       Node *next_tmp = parents[current_level]->next_node.at(current_level);
 
       // parent node being deleted
-      if ((size_t)next_tmp % 2 == 1) {
+      if (IsMarked(next_tmp)) {
         parents[current_level] = UpdateParent(root_, current_level, key, val);
         continue;
+      }
+
+      // Node was deleted
+      if (NodeGreaterThan(key, next_tmp)) {
+        epoch_manager_.LeaveEpoch(epoch);
+        return false;
       }
 
       // something inserted after parent
@@ -262,10 +279,12 @@ class SkipList {
         continue;
       }
 
+      next_node = UnmaskPointer(next_node);
+
       // CAS parents next to del_node's next
       if (__sync_bool_compare_and_swap(
               &(parents[current_level]->next_node.at(current_level)), del_node,
-              del_node->next_node.at(current_level) - 1)) {
+              next_node)) {
         current_level--;
         marked_pointer = false;
       }
@@ -551,6 +570,50 @@ class SkipList {
   // SkipList Helpers
   ///////////////////////////////////////////////////////////////////
 
+  /*
+   * Masks the pointer so the 49th bit is 1
+   */
+  inline Node *MaskPointer(Node *ptr) {
+    intptr_t intp = reinterpret_cast<intptr_t>(ptr);
+    intp = intp | POINTER_MASK;
+    return reinterpret_cast<Node *>(intp);
+  }
+
+  /*
+   * Unmasks the pointer so the 49th bit is 0
+   */
+  inline Node *UnmaskPointer(Node *ptr) {
+    intptr_t intp = reinterpret_cast<intptr_t>(ptr);
+    intp = intp > POINTER_MASK ? intp - POINTER_MASK : intp;
+    return reinterpret_cast<Node *>(intp);
+  }
+
+  // Returns true if node is logically deleted
+  static inline bool IsLogicalDeleted(Node *ptr) {
+    intptr_t intp = reinterpret_cast<intptr_t>(ptr);
+    return (intp & POINTER_MASK) > 0;
+  }
+
+  /*
+   * Returns whether the pointer has been masked
+   */
+  inline bool IsMarked(Node *ptr) {
+    intptr_t intp = reinterpret_cast<intptr_t>(ptr);
+    return (intp & POINTER_MASK) > 0;
+  }
+
+  // Returns address of a possibly deleted node
+  static inline Node *GetAddress(Node *ptr) {
+    intptr_t intp = reinterpret_cast<intptr_t>(ptr);
+    if (intp > POINTER_MASK) {
+        return reinterpret_cast<Node *>(intp - POINTER_MASK);
+    }
+    return ptr;
+  }
+
+  /*
+   * Returns whether the node is equal to the key value pair
+   */
   inline bool NodeEqual(KeyType key, ValueType value, Node *node) {
     return (!node->is_edge_tower && key_cmp_equal(node->kv_p.first, key)
             && (!support_duplicates_
@@ -576,20 +639,17 @@ class SkipList {
   }
 
   /*
- * Returns true if node is not end tower and node.key <= key
- */
+   * Returns true if node is not end tower and node.key <= key
+   */
   inline bool NodeLessThanEqual(KeyType key, Node *node) const {
     return (!node->is_edge_tower && key_cmp_less_equal(key, node->kv_p.first));
   }
 
-  // Returns address of a possibly deleted node
-  static inline Node *GetAddress(Node *addr) {
-    return (((size_t)addr % 2) == 1) ? (Node *)((size_t)addr - 1) : addr;
-  }
-
-  // Returns true if node is logically deleted
-  static inline bool IsLogicalDeleted(Node *node) {
-    return (((size_t)(node->next_node[node->next_node.size() - 1])) % 2) == 1;
+  /*
+   * Returns true if node is end tower or node.key > key
+   */
+  inline bool NodeGreaterThan(KeyType key, Node *node) const {
+    return (node->is_edge_tower || key_cmp_greater(key, node->kv_p.first));
   }
 
   /*
@@ -641,6 +701,9 @@ class SkipList {
 
     // Denotes if node represents an edge tower
     bool is_edge_tower;
+
+    // Denotes whether the node has been successfully inserted
+    bool inserted;
   };
 
   KeyComparator key_cmp_obj_;
