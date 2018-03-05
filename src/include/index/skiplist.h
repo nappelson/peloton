@@ -72,11 +72,11 @@ class SkipList {
     // Create start and end towers
     Node *start = new Node{};
     start->next_node = {};
-    start->is_edge_tower = false;
+    start->is_edge_tower = true;
 
     Node *end = new Node{};
     end->next_node = {};
-    end->is_edge_tower = false;
+    end->is_edge_tower = true;
 
     for (int i = 0; i < MAX_TOWER_HEIGHT; i++) {
       start->next_node.push_back(end);
@@ -92,6 +92,8 @@ class SkipList {
   bool Insert(const KeyType &key, const ValueType &value) {
     auto epoch = epoch_manager_.JoinEpoch();
 
+    PrintSkipList();
+
     std::vector<Node *> parents = FindParents(key, value);
 
     Node *new_node = new Node{};
@@ -104,7 +106,8 @@ class SkipList {
     new_node->next_node = std::vector<Node *>(node_level);
 
     while (current_level < node_level) {
-      Node *next_node = GetAddress(parents[current_level]->next_node.at(current_level));
+      Node *next_node =
+          GetAddress(parents[current_level]->next_node.at(current_level));
 
       // parent was deleted
       // TODO: Verify we need to cast next_node to (size_t)
@@ -114,8 +117,7 @@ class SkipList {
       }
 
       // Key already inserted
-      if (key_cmp_equal(key, next_node->kv_p.first) && (!support_duplicates_ ||
-                  value_cmp_equal(value, next_node->kv_p.second))) {
+      if (NodeEqual(key, value, next_node)) {
         if (current_level == 0) {
           epoch_manager_.LeaveEpoch(epoch);
           return false;
@@ -126,7 +128,7 @@ class SkipList {
       }
 
       // Node inserted after parent
-      if (key_cmp_less(next_node->kv_p.first, key)) {
+      if (NodeLessThan(key, next_node)) {
         parents[current_level] =
             UpdateParent(parents[current_level], current_level, key, value);
         continue;
@@ -186,26 +188,38 @@ class SkipList {
   /*
    * Delete
    */
+  // TODO: fix delete insert (same node) race condition
   bool Remove(const KeyType &key, const ValueType &val) {
     auto epoch = epoch_manager_.JoinEpoch();
 
     std::vector<Node *> parents = FindParents(key, val);
 
-    Node *del_node = parents[0]->next_node[0];
+    Node *del_node;
 
-    // bottom level parent being deleted
-    // TODO: Verify we need to cast del_node to (size_t)
-    while ((size_t)del_node % 2 == 1) {
-      parents[0] = UpdateParent(root_, 0 /* level */, key, val);
+    // Need to find the node we are deleting
+    do {
       del_node = parents[0]->next_node[0];
-    }
 
-    // Node does not exist
-    if (!key_cmp_equal(key, del_node->kv_p.first) ||
-        (support_duplicates_ && !value_cmp_equal(del_node->kv_p.second, val))) {
-      epoch_manager_.LeaveEpoch(epoch);
-      return false;
-    }
+      // bottom level parent being deleted
+      // TODO: Verify we need to cast del_node to (size_t)
+      while ((size_t)del_node % 2 == 1) {
+        parents[0] = UpdateParent(root_, 0 /* level */, key, val);
+        del_node = parents[0]->next_node[0];
+      }
+
+      // found the node
+      if (NodeEqual(key, val, del_node)) {
+        break;
+      }
+
+      // Node does not exist
+      if (NodeLessThan(key, del_node)) {
+        epoch_manager_.LeaveEpoch(epoch);
+        return false;
+      }
+
+      parents[0] = UpdateParent(parents[0], 0 /* level */, key, val);
+    } while (true);
 
     int current_level = del_node->next_node.size() - 1;
 
@@ -224,8 +238,9 @@ class SkipList {
       // TODO: Verify next_node + 1 works as intended (may need to be
       // (Node*)((size_t)next_node + 1)
       if (!marked_pointer &&
-          !__sync_bool_compare_and_swap(&(del_node->next_node.at(current_level)),
-                                        next_node, next_node + 1)) {
+          !__sync_bool_compare_and_swap(
+              &(del_node->next_node.at(current_level)), next_node,
+              next_node + 1)) {
         continue;
       }
 
@@ -240,9 +255,7 @@ class SkipList {
       }
 
       // something inserted after parent
-      if (!key_cmp_equal(key, next_tmp->kv_p.first) ||
-          (support_duplicates_ &&
-           !value_cmp_equal(del_node->kv_p.second, val))) {
+      if (!NodeEqual(key, val, next_tmp)) {
         parents[current_level] =
             UpdateParent(next_tmp, current_level, key, val);
         continue;
@@ -275,8 +288,8 @@ class SkipList {
   }
 
   // returns a vector of Nodes which come directly before the key in each level
-  // first finds the nodes which come before the key, and then will increment each
-  // until it is directly before the key/value pair
+  // first finds the nodes which come before the key, and then will increment
+  // each until it is directly before the key/value pair
   std::vector<Node *> FindParents(const KeyType &key, const ValueType &val) {
     // Node directly before the key in each level
     std::vector<Node *> parents(MAX_TOWER_HEIGHT);
@@ -303,7 +316,8 @@ class SkipList {
     current_node = parents.at(current_tower);
 
     while (current_tower >= 0) {
-      next_node = GetAddress(parents.at(current_tower)->next_node.at(current_tower));
+      next_node =
+          GetAddress(parents.at(current_tower)->next_node.at(current_tower));
 
       if (NodeLessThan(key, val, next_node)) {
         parents.at(current_tower) = next_node;
@@ -474,6 +488,12 @@ class SkipList {
   // SkipList Helpers
   ///////////////////////////////////////////////////////////////////
 
+  inline bool NodeEqual(KeyType key, ValueType value, Node *node) {
+    return (!node->is_edge_tower && key_cmp_equal(node->kv_p.first, key)
+            && (!support_duplicates_
+                || value_cmp_equal(node->kv_p.second, value)));
+  }
+
   /*
    * Returns true if node is not end tower and node.key < key or
    * node.key = key and node.value != value (only if duplicates supported)
@@ -507,6 +527,21 @@ class SkipList {
   // Returns true if node is logically deleted
   static inline bool IsLogicalDeleted(Node *node) {
     return (((size_t)(node->next_node[node->next_node.size() - 1])) % 2) == 1;
+  }
+
+  /*
+   * Prints contents of tree
+   * NOT thread or epoch safe
+   */
+  void PrintSkipList() {
+
+    printf("----- Start Tower -----\n");
+    Node* curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
+    while (!curr_node_->is_edge_tower) {
+      printf("Key: %s | Height %zu\n", curr_node_->kv_p.first.GetInfo().c_str(), curr_node_->next_node.size());
+    }
+    printf("------ End Tower ------\n");
+
   }
 
   struct Node {
