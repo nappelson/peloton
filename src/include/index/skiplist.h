@@ -455,12 +455,14 @@ class SkipList {
 
   /*
    * Find node with largest key such that node.key <= key
+   * If duplicates, returns largest key such that node.key < key
    * TODO: Check correctness of inner while loop
    */
   Node *FindNode(const KeyType &key) const {
     auto curr_tower = root_;
-    // TODO: This search can be slightly sped up if we keep track of the tallest
-    // tower
+
+    LOG_DEBUG("Duplicates: %d | Looking for Key: %s", support_duplicates_, key.GetInfo().c_str());
+
     auto curr_level = MAX_TOWER_HEIGHT - 1;
 
     // Traverse towers, if you find it along the way, then return
@@ -470,12 +472,25 @@ class SkipList {
       while (
           (!next_node->is_edge_tower) && // dont jump if next node is end tower
 
-          ((!support_duplicates_ && NodeLessThanEqual(key, next_node)) ||  // jump to next node if eligible
-           ((support_duplicates_ && NodeLessThan(key, next_node)))) &&  // dont jump if node greater or equal to
+          ((!support_duplicates_ && key_cmp_greater_equal(key, next_node->kv_p.first)) ||  // jump to next node if eligible
+           ((support_duplicates_ && key_cmp_greater(key, next_node->kv_p.first)))) &&  // dont jump if node greater or equal to
                                         // key
 
               !(key_cmp_equal(key, next_node->kv_p.first) && IsLogicalDeleted(next_node)))  // dont jump if node you're looking for is deleted
       {
+//        if (!curr_tower->is_edge_tower && !curr_tower->is_edge_tower) {
+//          PL_ASSERT(!(!support_duplicates_ && key_cmp_equal(curr_tower->kv_p.first, next_node->kv_p.first)));
+//          LOG_DEBUG("key_cmp_less(%s,%s) = %d", curr_tower->kv_p.first.GetInfo().c_str(),
+//                    next_node->kv_p.first.GetInfo().c_str(), key_cmp_less(curr_tower->kv_p.first, next_node->kv_p.first));
+//          LOG_DEBUG("key_cmp_equal(%s,%s) = %d", curr_tower->kv_p.first.GetInfo().c_str(),
+//                    next_node->kv_p.first.GetInfo().c_str(), key_cmp_equal(curr_tower->kv_p.first, next_node->kv_p.first));
+//          LOG_DEBUG("Jumping from tower %s to tower %s", curr_tower->kv_p.first.GetInfo().c_str(), next_node->kv_p.first.GetInfo().c_str());
+//        } else {
+//          PL_ASSERT(curr_tower->is_edge_tower && !next_node->is_edge_tower);
+//          LOG_DEBUG("Jumping from start tower to tower %s",next_node->kv_p.first.GetInfo().c_str());
+//        }
+
+
         curr_tower = next_node;
         next_node = GetAddress(curr_tower->next_node[curr_level]);
       }
@@ -484,11 +499,11 @@ class SkipList {
           || curr_level == 0) {
         return curr_tower;
       }
-//      if (curr_tower->is_edge_tower) {
-//        LOG_DEBUG("On start tower | level = %d | search_key = %s", curr_level, key.GetInfo().c_str());
-//      } else {
-//        LOG_DEBUG("On tower = %s | level = %d | search_key = %s", curr_tower->kv_p.first.GetInfo().c_str(), curr_level, key.GetInfo().c_str());
-//      }
+      if (curr_tower->is_edge_tower) {
+        LOG_DEBUG("On start tower | level = %d | search_key = %s", curr_level, key.GetInfo().c_str());
+      } else {
+        LOG_DEBUG("On tower = %s | level = %d | search_key = %s", curr_tower->kv_p.first.GetInfo().c_str(), curr_level, key.GetInfo().c_str());
+      }
       curr_level--;
     }
   }
