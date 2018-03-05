@@ -728,6 +728,7 @@ class SkipList {
   ///////////////////////////////////////////////////////////////////
  public:
   inline bool key_cmp_less(const KeyType &key1, const KeyType &key2) const {
+    LOG_DEBUG("key_cmp_less(%s, %s)", key1.GetInfo().c_str(), key2.GetInfo().c_str());
     return key_cmp_obj_(key1, key2);
   }
 
