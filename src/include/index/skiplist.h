@@ -139,8 +139,9 @@ class SkipList {
       // If CAS succeeds go to next level, otherwise try again
       // TODO: This line is causing compilation errors and I dont know why the
       // fuck it is
-      if (__sync_bool_compare_and_swap(&parents[current_level], next_node,
-                                       new_node)) {
+      if (__sync_bool_compare_and_swap(
+                  &parents[current_level]->next_node[current_level],
+                    next_node, new_node)) {
         current_level++;
       }
     }
