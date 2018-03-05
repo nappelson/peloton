@@ -452,19 +452,19 @@ class SkipList {
 
     // Traverse towers, if you find it along the way, then return
     while (true) {
+      PL_ASSERT((unsigned long)curr_level < curr_tower->next_node.size());
       auto next_node = GetAddress(curr_tower->next_node[curr_level]);
       while (
-          ((NodeLessThanEqual(key, next_node) &&
-            !support_duplicates_) ||  // jump to next node if eligible
-           ((!next_node->is_edge_tower &&
-             key_cmp_less(key, next_node->kv_p.first) &&
-             support_duplicates_))) &&  // dont jump if node greater or equal to
+          (!next_node->is_edge_tower) && // dont jump if next node is end tower
+
+          ((NodeLessThanEqual(key, next_node) && !support_duplicates_) ||  // jump to next node if eligible
+           ((!next_node->is_edge_tower && key_cmp_less(key, next_node->kv_p.first) &&  support_duplicates_))) &&  // dont jump if node greater or equal to
                                         // key
           !(key_cmp_equal(key, next_node->kv_p.first) &&
             IsLogicalDeleted(
                 next_node)))  // dont jump if node you're looking for is deleted
       {
-        curr_tower = GetAddress(curr_tower->next_node[curr_level]);
+        curr_tower = next_node;
       }
 
       if ((!curr_tower->is_edge_tower && key_cmp_equal(curr_tower->kv_p.first, key))
@@ -581,6 +581,7 @@ class SkipList {
     Node* curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
     while (!curr_node_->is_edge_tower) {
       printf("Key: %s | Height %zu\n", curr_node_->kv_p.first.GetInfo().c_str(), curr_node_->next_node.size());
+      curr_node_ = GetAddress(curr_node_->next_node[0]);
     }
     printf("------ End Tower ------\n");
 
@@ -784,11 +785,8 @@ class SkipList {
       curr_node_ = GetAddress(curr_node_->next_node[0]);
 
       // Iterate until we find a non-deleted node
-      while (IsLogicalDeleted(curr_node_)) {
+      while (!curr_node_->is_edge_tower && IsLogicalDeleted(curr_node_)) {
         curr_node_ = GetAddress(curr_node_->next_node[0]);
-
-        // If we get to end tower, return
-        if (curr_node_->is_edge_tower) return;
       }
 
       return;

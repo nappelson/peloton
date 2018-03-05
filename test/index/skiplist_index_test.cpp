@@ -30,9 +30,9 @@ TEST_F(SkipListIndexTests, BasicTest) {
   //  EXPECT_EQ(2, 1+1);
 }
 
-// TEST_F(SkipListIndexTests, MultiMapInsertTest) {
-//  TestingIndexUtil::MultiMapInsertTest(IndexType::SKIPLIST);
-//}
+ TEST_F(SkipListIndexTests, MultiMapInsertTest) {
+  TestingIndexUtil::MultiMapInsertTest(IndexType::SKIPLIST);
+}
 //
 // TEST_F(SkipListIndexTests, UniqueKeyInsertTest) {
 //  TestingIndexUtil::UniqueKeyInsertTest(IndexType::SKIPLIST);
