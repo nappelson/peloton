@@ -72,11 +72,11 @@ class SkipList {
     // Create start and end towers
     Node *start = new Node{};
     start->next_node = {};
-    start->is_edge_tower = false;
+    start->is_edge_tower = true;
 
     Node *end = new Node{};
     end->next_node = {};
-    end->is_edge_tower = false;
+    end->is_edge_tower = true;
 
     for (int i = 0; i < MAX_TOWER_HEIGHT; i++) {
       start->next_node.push_back(end);
@@ -91,6 +91,8 @@ class SkipList {
    */
   bool Insert(const KeyType &key, const ValueType &value) {
     auto epoch = epoch_manager_.JoinEpoch();
+
+    PrintSkipList();
 
     std::vector<Node *> parents = FindParents(key, value);
 
@@ -514,6 +516,22 @@ class SkipList {
     return (((size_t)(node->next_node[node->next_node.size() - 1])) % 2) == 1;
   }
 
+  /*
+   * Prints contents of tree
+   * NOT thread or epoch safe
+   */
+  void PrintSkipList() {
+
+    printf("----- Start Tower -----\n");
+    Node* curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
+    while (!curr_node_->is_edge_tower) {
+      printf("Key: %s | Height %zu\n", curr_node_->kv_p.first.GetInfo().c_str(), curr_node_->next_node.size());
+    }
+    printf("------ End Tower ------\n");
+
+  }
+
+
   struct Node {
     // Key Value pair
     KeyValuePair kv_p;
@@ -728,7 +746,7 @@ class SkipList {
   ///////////////////////////////////////////////////////////////////
  public:
   inline bool key_cmp_less(const KeyType &key1, const KeyType &key2) const {
-    LOG_DEBUG("key_cmp_less(%s, %s)", key1.GetInfo().c_str(), key2.GetInfo().c_str());
+    //LOG_DEBUG("key_cmp_less(%s, %s)", key1.GetInfo().c_str(), key2.GetInfo().c_str());
     return key_cmp_obj_(key1, key2);
   }
 
