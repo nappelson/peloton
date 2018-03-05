@@ -196,6 +196,7 @@ class SkipList {
    * Delete
    */
   // TODO: fix delete insert (same node) race condition
+  // TODO: Add a check for attempting to delete a node that is not in the index
   bool Remove(const KeyType &key, const ValueType &val) {
     auto epoch = epoch_manager_.JoinEpoch();
 
@@ -289,8 +290,6 @@ class SkipList {
         marked_pointer = false;
       }
     }
-
-    PrintSkipList();
 
     // mark fully deleted node as a garbage node
     epoch_manager_.AddGarbageNode(del_node);
@@ -1071,7 +1070,6 @@ class EpochManager {
    */
   void AddGarbageNode(const NodeType *node_ptr) {
     // TODO: Shouldn't this code be inside the while(1)
-    LOG_DEBUG("Adding garbage node with key : %s", node_ptr->kv_p.first.GetInfo().c_str());
     auto cur_epoch_node = *cur_epoch_node_itr_;
     GarbageNode *garbage_node_ptr = new GarbageNode;
     garbage_node_ptr->node_ptr = node_ptr;

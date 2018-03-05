@@ -46,16 +46,16 @@ type::Value Tuple::GetValue(oid_t column_id) const {
 void Tuple::SetValue(const oid_t column_offset, const type::Value &value,
                      type::AbstractPool *data_pool) {
   const type::TypeId type = tuple_schema_->GetType(column_offset);
-  LOG_TRACE("c offset: %d; using pool: %p", column_offset, data_pool);
+//  LOG_TRACE("c offset: %d; using pool: %p", column_offset, data_pool);
 
   const bool is_inlined = tuple_schema_->IsInlined(column_offset);
   char *value_location = GetDataPtr(column_offset);
   UNUSED_ATTRIBUTE size_t column_length =
       tuple_schema_->GetLength(column_offset);
 
-  LOG_TRACE("column_offset: %d; value_location %p; column_length %lu; type %s",
-            column_offset, value_location, column_length,
-            TypeIdToString(type).c_str());
+//  LOG_TRACE("column_offset: %d; value_location %p; column_length %lu; type %s",
+//            column_offset, value_location, column_length,
+//            TypeIdToString(type).c_str());
 
   // Skip casting if type is same
   if (type == value.GetTypeId()) {

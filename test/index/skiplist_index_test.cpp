@@ -40,19 +40,19 @@ TEST_F(SkipListIndexTests, BasicTest) {
  TEST_F(SkipListIndexTests, UniqueKeyDeleteTest) {
   TestingIndexUtil::UniqueKeyDeleteTest(IndexType::SKIPLIST);
 }
+
+ TEST_F(SkipListIndexTests, NonUniqueKeyDeleteTest) {
+  TestingIndexUtil::NonUniqueKeyDeleteTest(IndexType::SKIPLIST);
+}
+
+ TEST_F(SkipListIndexTests, MultiThreadedInsertTest) {
+  TestingIndexUtil::MultiThreadedInsertTest(IndexType::SKIPLIST);
+}
 //
-// TEST_F(SkipListIndexTests, NonUniqueKeyDeleteTest) {
-//  TestingIndexUtil::NonUniqueKeyDeleteTest(IndexType::SKIPLIST);
-//}
-//
-// TEST_F(SkipListIndexTests, MultiThreadedInsertTest) {
-//  TestingIndexUtil::MultiThreadedInsertTest(IndexType::SKIPLIST);
-//}
-//
-// TEST_F(SkipListIndexTests, UniqueKeyMultiThreadedTest) {
-//  TestingIndexUtil::UniqueKeyMultiThreadedTest(IndexType::SKIPLIST);
-//}
-//
+ TEST_F(SkipListIndexTests, UniqueKeyMultiThreadedTest) {
+  TestingIndexUtil::UniqueKeyMultiThreadedTest(IndexType::SKIPLIST);
+}
+
 // TEST_F(SkipListIndexTests, NonUniqueKeyMultiThreadedTest) {
 //  TestingIndexUtil::NonUniqueKeyMultiThreadedTest(IndexType::SKIPLIST);
 //}
