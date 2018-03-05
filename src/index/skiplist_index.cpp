@@ -221,8 +221,12 @@ void SKIPLIST_INDEX_TYPE::ScanKey(
   KeyType index_key;
   index_key.SetFromKey(key);
 
-  auto node = container.FindNode(index_key);
-  result.push_back(node->kv_p.second);
+  // This function in BwTree fills a given vector
+  container.GetValue(index_key, result);
+
+  LOG_TRACE("ScanKey(%s) - COMPLETE - Result vector size: %zu", key->GetInfo().c_str(), result.size());
+
+  return;
 }
 
 SKIPLIST_TEMPLATE_ARGUMENTS

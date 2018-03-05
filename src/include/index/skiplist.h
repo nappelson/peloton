@@ -400,6 +400,46 @@ class SkipList {
     return false;
   }
 
+
+   /*
+    * GetValue() - Fill a value list with values stored
+    *
+    * This function accepts a value list as argument,
+    * and will copy all values into the list
+    *
+    * The return value is used to indicate whether the value set
+    * is empty or not
+    */
+  void GetValue(const KeyType &search_key, std::vector<ValueType> &value_list) {
+
+   auto epoch_node = epoch_manager_.JoinEpoch();
+
+   auto curr_node = FindNode(search_key);
+
+   if (!support_duplicates_) {
+
+     if (!curr_node->is_edge_tower && key_cmp_equal(search_key, curr_node->kv_p.first)) {
+       value_list.push_back(curr_node->kv_p.second);
+     }
+   } else {
+     PL_ASSERT(curr_node->is_edge_tower || NodeLessThan(search_key, curr_node));
+
+     curr_node = GetAddress(curr_node->next_node[0]);
+
+     while (NodeLessThanEqual(search_key, curr_node)) {
+
+       PL_ASSERT(key_cmp_equal(search_key, curr_node->kv_p.first));
+       value_list.push_back(curr_node->kv_p.second);
+       curr_node = GetAddress(curr_node->next_node[0]);
+     }
+   }
+
+   epoch_manager_.LeaveEpoch(epoch_node);
+   return;
+  }
+
+
+
   /*
    * Find node with largest key such that node.key <= key
    * TODO: Check correctness of inner while loop
