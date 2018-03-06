@@ -179,16 +179,16 @@ void TestingIndexUtil::UniqueKeyDeleteTest(const IndexType index_type) {
   EXPECT_EQ(0, location_ptrs.size());
   location_ptrs.clear();
 
-//  LOG_DEBUG("ScanKey(key2=%s)", key2->GetInfo().c_str());
-//  index->ScanKey(key2.get(), location_ptrs);
-//#ifdef LOG_DEBUG_ENABLED
-//  for (auto ptr : location_ptrs) {
-//    LOG_DEBUG(" FOUND: %s", index::IndexUtil::GetInfo(ptr).c_str());
-//  }
-//#endif
-//  EXPECT_EQ(1, location_ptrs.size());
-//  EXPECT_EQ(TestingIndexUtil::item1->block, location_ptrs[0]->block);
-//  location_ptrs.clear();
+  LOG_DEBUG("ScanKey(key2=%s)", key2->GetInfo().c_str());
+  index->ScanKey(key2.get(), location_ptrs);
+#ifdef LOG_DEBUG_ENABLED
+  for (auto ptr : location_ptrs) {
+    LOG_DEBUG(" FOUND: %s", index::IndexUtil::GetInfo(ptr).c_str());
+  }
+#endif
+  EXPECT_EQ(1, location_ptrs.size());
+  EXPECT_EQ(TestingIndexUtil::item1->block, location_ptrs[0]->block);
+  location_ptrs.clear();
 }
 
 void TestingIndexUtil::NonUniqueKeyDeleteTest(const IndexType index_type) {

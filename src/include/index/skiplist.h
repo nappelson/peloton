@@ -124,7 +124,9 @@ class SkipList {
       }
 
       // Key already inserted
-      if (NodeEqual(key, value, next_node)) {
+      //if (NodeEqual(key, value, next_node)) {
+      if (!new_node->is_edge_tower && key_cmp_equal(key, next_node->kv_p.first) &&
+          (!support_duplicates_ || value_cmp_equal(value, next_node->kv_p.second))) {
         if (current_level == 0) {
           epoch_manager_.LeaveEpoch(epoch);
           return false;
@@ -627,9 +629,9 @@ class SkipList {
    * Returns whether the node is equal to the key value pair
    */
   inline bool NodeEqual(KeyType key, ValueType value, Node *node) {
-    return (
-        !node->is_edge_tower && key_cmp_equal(node->kv_p.first, key) &&
-        (!support_duplicates_ || value_cmp_equal(node->kv_p.second, value)));
+    return (!node->is_edge_tower &&
+            key_cmp_equal(node->kv_p.first, key) &&
+            value_cmp_equal(node->kv_p.second, value));
   }
 
   /*
@@ -673,7 +675,7 @@ class SkipList {
     Node *curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
     while (!curr_node_->is_edge_tower) {
       if (!IsLogicalDeleted(curr_node_)) {
-        LOG_DEBUG("Key: %s | Height %zu\n",
+        LOG_DEBUG("Key: %s | Height %zu",
                   curr_node_->kv_p.first.GetInfo().c_str(),
                   curr_node_->next_node.size());
       }
