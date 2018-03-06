@@ -39,7 +39,7 @@ class EpochManager;
 #define MAX_TOWER_HEIGHT 32
 
 // Used to mask pointers (only first 48 bits are used in the pointer)
-#define POINTER_MASK (((intptr_t) 1) << ((intptr_t) 49))
+#define POINTER_MASK (((intptr_t)1) << ((intptr_t)49))
 
 /*
  * SKIPLIST_TEMPLATE_ARGUMENTS - Save some key strokes
@@ -72,6 +72,9 @@ class SkipList {
         key_eq_obj_{p_key_eq_obj},
         value_eq_obj_{p_value_eq_obj},
         epoch_manager_{} {
+    max_level_ = MAX_TOWER_HEIGHT - 1;
+    // seed the level generation
+    srand(time(nullptr));
     // Create start and end towers
     Node *start = new Node{};
     start->next_node = {};
@@ -106,14 +109,13 @@ class SkipList {
     new_node->kv_p = std::make_pair(key, value);
     new_node->inserted = false;
 
-    unsigned int node_level = generate_level() % MAX_TOWER_HEIGHT;
+    unsigned int height = generate_level() % MAX_TOWER_HEIGHT;
     unsigned int current_level = 0;
 
-    new_node->next_node = std::vector<Node *>(node_level);
+    new_node->next_node = std::vector<Node *>(height);
 
-    while (current_level < node_level) {
-      Node *next_node =
-          parents[current_level]->next_node.at(current_level);
+    while (current_level < height) {
+      Node *next_node = parents[current_level]->next_node.at(current_level);
 
       // parent was deleted
       if (IsMarked(next_node)) {
@@ -139,12 +141,12 @@ class SkipList {
         continue;
       }
 
-      new_node->next_node.at(current_level) = next_node;
+      new_node->next_node[current_level] = next_node;
 
       // If CAS succeeds go to next level, otherwise try again
       if (__sync_bool_compare_and_swap(
-                  &parents[current_level]->next_node[current_level],
-                    next_node, new_node)) {
+              &(parents[current_level])->next_node[current_level], next_node,
+              new_node)) {
         current_level++;
       }
     }
@@ -230,8 +232,8 @@ class SkipList {
 
     // Node has not been fully inserted so is not available for deletion
     if (!del_node->inserted) {
-        epoch_manager_.LeaveEpoch(epoch);
-        return false;
+      epoch_manager_.LeaveEpoch(epoch);
+      return false;
     }
 
     int current_level = del_node->next_node.size() - 1;
@@ -249,12 +251,12 @@ class SkipList {
 
       // mark the next pointer so future nodes know it is being deleted
       if (!marked_pointer) {
-          Node *marked_node = MaskPointer(next_node);
-          if (!__sync_bool_compare_and_swap(
-              &(del_node->next_node.at(current_level)), next_node,
-              marked_node)) {
-            continue;
-          }
+        Node *marked_node = MaskPointer(next_node);
+        if (!__sync_bool_compare_and_swap(
+                &(del_node->next_node.at(current_level)), next_node,
+                marked_node)) {
+          continue;
+        }
       }
 
       marked_pointer = true;
@@ -420,58 +422,56 @@ class SkipList {
     return false;
   }
 
-
-   /*
-    * GetValue() - Fill a value list with values stored
-    *
-    * This function accepts a value list as argument,
-    * and will copy all values into the list
-    *
-    * The return value is used to indicate whether the value set
-    * is empty or not
-    */
+  /*
+   * GetValue() - Fill a value list with values stored
+   *
+   * This function accepts a value list as argument,
+   * and will copy all values into the list
+   *
+   * The return value is used to indicate whether the value set
+   * is empty or not
+   */
   void GetValue(const KeyType &search_key, std::vector<ValueType> &value_list) {
+    auto epoch_node = epoch_manager_.JoinEpoch();
 
-     auto epoch_node = epoch_manager_.JoinEpoch();
+    PrintSkipList();
+    PL_ASSERT(IsSorted());
 
-     PrintSkipList();
-     PL_ASSERT(IsSorted());
+    auto curr_node = FindNode(search_key);
 
-     auto curr_node = FindNode(search_key);
-
-     if (curr_node->is_edge_tower) {
-       LOG_DEBUG("Starting scan with start tower");
-     } else {
-       LOG_DEBUG("Starting scan on key: %s", curr_node->kv_p.first.GetInfo().c_str());
-     }
-
-     if (!support_duplicates_) {
-
-       if (!curr_node->is_edge_tower && key_cmp_equal(search_key, curr_node->kv_p.first)) {
-         value_list.push_back(curr_node->kv_p.second);
-       }
-     } else {
-       PL_ASSERT(curr_node->is_edge_tower || NodeLessThan(search_key, curr_node));
-
-       curr_node = GetAddress(curr_node->next_node[0]);
-
-
-       while (!curr_node->is_edge_tower && key_cmp_equal(search_key, curr_node->kv_p.first)) {
-
-         LOG_DEBUG("Adding to value_list: %s", curr_node->kv_p.first.GetInfo().c_str());
-         PL_ASSERT(IsSorted());
-         PL_ASSERT(!key_cmp_less(curr_node->kv_p.first, search_key));
-         PL_ASSERT(key_cmp_equal(search_key, curr_node->kv_p.first));
-         value_list.push_back(curr_node->kv_p.second);
-         curr_node = GetAddress(curr_node->next_node[0]);
-       }
-     }
-
-     epoch_manager_.LeaveEpoch(epoch_node);
-     return;
+    if (curr_node->is_edge_tower) {
+      LOG_DEBUG("Starting scan with start tower");
+    } else {
+      LOG_DEBUG("Starting scan on key: %s",
+                curr_node->kv_p.first.GetInfo().c_str());
     }
 
+    if (!support_duplicates_) {
+      if (!curr_node->is_edge_tower &&
+          key_cmp_equal(search_key, curr_node->kv_p.first)) {
+        value_list.push_back(curr_node->kv_p.second);
+      }
+    } else {
+      PL_ASSERT(curr_node->is_edge_tower ||
+                NodeLessThan(search_key, curr_node));
 
+      curr_node = GetAddress(curr_node->next_node[0]);
+
+      while (!curr_node->is_edge_tower &&
+             key_cmp_equal(search_key, curr_node->kv_p.first)) {
+        LOG_DEBUG("Adding to value_list: %s",
+                  curr_node->kv_p.first.GetInfo().c_str());
+        PL_ASSERT(IsSorted());
+        PL_ASSERT(!key_cmp_less(curr_node->kv_p.first, search_key));
+        PL_ASSERT(key_cmp_equal(search_key, curr_node->kv_p.first));
+        value_list.push_back(curr_node->kv_p.second);
+        curr_node = GetAddress(curr_node->next_node[0]);
+      }
+    }
+
+    epoch_manager_.LeaveEpoch(epoch_node);
+    return;
+  }
 
   /*
    * Find node with largest key such that node.key <= key
@@ -481,7 +481,8 @@ class SkipList {
   Node *FindNode(const KeyType &key) const {
     auto curr_tower = root_;
 
-    LOG_DEBUG("Duplicates: %d | Looking for Key: %s", support_duplicates_, key.GetInfo().c_str());
+    LOG_DEBUG("Duplicates: %d | Looking for Key: %s", support_duplicates_,
+              key.GetInfo().c_str());
 
     auto curr_level = MAX_TOWER_HEIGHT - 1;
 
@@ -490,27 +491,39 @@ class SkipList {
       PL_ASSERT((unsigned long)curr_level < curr_tower->next_node.size());
       auto next_node = GetAddress(curr_tower->next_node[curr_level]);
       while (
-          (!next_node->is_edge_tower) && // dont jump if next node is end tower
+          (!next_node->is_edge_tower) &&  // dont jump if next node is end tower
 
-          ((!support_duplicates_ && key_cmp_greater_equal(key, next_node->kv_p.first)) ||  // jump to next node if eligible
-           ((support_duplicates_ && key_cmp_greater(key, next_node->kv_p.first)))) &&  // dont jump if node greater or equal to
-                                        // key
+          ((!support_duplicates_ &&
+            key_cmp_greater_equal(
+                key,
+                next_node->kv_p.first)) ||  // jump to next node if eligible
+           ((support_duplicates_ &&
+             key_cmp_greater(key, next_node->kv_p.first)))) &&  // dont jump if
+                                                                // node greater
+                                                                // or equal to
+                                                                // key
 
-              !(key_cmp_equal(key, next_node->kv_p.first) && IsLogicalDeleted(next_node)))  // dont jump if node you're looking for is deleted
+          !(key_cmp_equal(key, next_node->kv_p.first) &&
+            IsLogicalDeleted(
+                next_node)))  // dont jump if node you're looking for is deleted
       {
         curr_tower = next_node;
         next_node = GetAddress(curr_tower->next_node[curr_level]);
       }
 
-      if ((!curr_tower->is_edge_tower && key_cmp_equal(curr_tower->kv_p.first, key))
-          || curr_level == 0) {
+      if ((!curr_tower->is_edge_tower &&
+           key_cmp_equal(curr_tower->kv_p.first, key)) ||
+          curr_level == 0) {
         return curr_tower;
       }
-//      if (curr_tower->is_edge_tower) {
-//        LOG_DEBUG("On start tower | level = %d | search_key = %s", curr_level, key.GetInfo().c_str());
-//      } else {
-//        LOG_DEBUG("On tower = %s | level = %d | search_key = %s", curr_tower->kv_p.first.GetInfo().c_str(), curr_level, key.GetInfo().c_str());
-//      }
+      //      if (curr_tower->is_edge_tower) {
+      //        LOG_DEBUG("On start tower | level = %d | search_key = %s",
+      //        curr_level, key.GetInfo().c_str());
+      //      } else {
+      //        LOG_DEBUG("On tower = %s | level = %d | search_key = %s",
+      //        curr_tower->kv_p.first.GetInfo().c_str(), curr_level,
+      //        key.GetInfo().c_str());
+      //      }
       curr_level--;
     }
   }
@@ -605,7 +618,7 @@ class SkipList {
   static inline Node *GetAddress(Node *ptr) {
     intptr_t intp = reinterpret_cast<intptr_t>(ptr);
     if (intp > POINTER_MASK) {
-        return reinterpret_cast<Node *>(intp - POINTER_MASK);
+      return reinterpret_cast<Node *>(intp - POINTER_MASK);
     }
     return ptr;
   }
@@ -614,9 +627,9 @@ class SkipList {
    * Returns whether the node is equal to the key value pair
    */
   inline bool NodeEqual(KeyType key, ValueType value, Node *node) {
-    return (!node->is_edge_tower && key_cmp_equal(node->kv_p.first, key)
-            && (!support_duplicates_
-                || value_cmp_equal(node->kv_p.second, value)));
+    return (
+        !node->is_edge_tower && key_cmp_equal(node->kv_p.first, key) &&
+        (!support_duplicates_ || value_cmp_equal(node->kv_p.second, value)));
   }
 
   /*
@@ -656,17 +669,17 @@ class SkipList {
    * NOT thread or epoch safe
    */
   void PrintSkipList() {
-
-    printf("----- Start Tower -----\n");
-    Node* curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
+    LOG_DEBUG("----- Start Tower -----\n");
+    Node *curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
     while (!curr_node_->is_edge_tower) {
       if (!IsLogicalDeleted(curr_node_)) {
-        printf("Key: %s | Height %zu\n", curr_node_->kv_p.first.GetInfo().c_str(), curr_node_->next_node.size());
+        LOG_DEBUG("Key: %s | Height %zu\n",
+                  curr_node_->kv_p.first.GetInfo().c_str(),
+                  curr_node_->next_node.size());
       }
       curr_node_ = GetAddress(curr_node_->next_node[0]);
     }
-    printf("------ End Tower ------\n");
-
+    LOG_DEBUG("------ End Tower ------\n");
   }
 
   bool IsSorted() {
@@ -676,11 +689,11 @@ class SkipList {
     if (node->is_edge_tower) return true;
 
     while (!node->is_edge_tower) {
-
       auto next_node = GetAddress(node->next_node[0]);
       if (!next_node->is_edge_tower &&
           key_cmp_greater(node->kv_p.first, next_node->kv_p.first)) {
-        LOG_DEBUG("FAIL - %s > %s", node->kv_p.first.GetInfo().c_str(), next_node->kv_p.first.GetInfo().c_str());
+        LOG_DEBUG("FAIL - %s > %s", node->kv_p.first.GetInfo().c_str(),
+                  next_node->kv_p.first.GetInfo().c_str());
         return false;
       }
       node = GetAddress(node->next_node[0]);
@@ -715,7 +728,7 @@ class SkipList {
   Node *root_;
 
   inline unsigned int generate_level() const {
-    return ffs(rand() & ((1 << max_level_) - 1));
+    return ffs((rand() & ((1 << max_level_) - 1)));
   }
 
  public:
