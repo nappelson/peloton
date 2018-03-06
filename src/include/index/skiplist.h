@@ -124,7 +124,6 @@ class SkipList {
       }
 
       // Key already inserted
-      //if (NodeEqual(key, value, next_node)) {
       if (!new_node->is_edge_tower && key_cmp_equal(key, next_node->kv_p.first) &&
           (!support_duplicates_ || value_cmp_equal(value, next_node->kv_p.second))) {
         if (current_level == 0) {

@@ -9,6 +9,8 @@
 // Copyright (c) 2015-17, Carnegie Mellon University Database Group
 //
 //===----------------------------------------------------------------------===//
+#include <include/settings/setting_id.h>
+#include <include/settings/settings_manager.h>
 #include "index/skiplist_index.h"
 
 #include "common/logger.h"
@@ -51,7 +53,13 @@ bool SKIPLIST_INDEX_TYPE::InsertEntry(const storage::Tuple *key,
   KeyType index_key;
   index_key.SetFromKey(key);
 
+
   bool ret = container.Insert(index_key, value);
+
+  if (static_cast<StatsType>(settings::SettingsManager::GetInt(
+      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+    stats::BackendStatsContext::GetInstance()->IncrementIndexInserts(metadata);
+  }
 
   if (ret) {
     LOG_TRACE("Inserted key: %s - [SUCCESS]", key->GetInfo().c_str());
@@ -72,8 +80,15 @@ bool SKIPLIST_INDEX_TYPE::DeleteEntry(const storage::Tuple *key,
                                       ItemPointer *value) {
   KeyType index_key;
   index_key.SetFromKey(key);
+  size_t delete_count = 0;
 
   bool ret = container.Remove(index_key, value);
+
+  if (static_cast<StatsType>(settings::SettingsManager::GetInt(
+      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+    stats::BackendStatsContext::GetInstance()->IncrementIndexDeletes(
+        delete_count, metadata);
+  }
 
   if (ret) {
     LOG_TRACE("Deleted key: %s - [SUCCESS]", key->GetInfo().c_str());
@@ -100,6 +115,7 @@ bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
   bool ret = container.ConditionalInsert(index_key, value, predicate,
                                          &predicate_satisfied);
 
+
   // If predicate is not satisfied then we know insertion successes
   if (predicate_satisfied == false) {
     // So it should always succeed?
@@ -108,6 +124,11 @@ bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
   } else {
     LOG_TRACE("Cond. Inserted Key: %s - [FAILURE]", key->GetInfo().c_str());
     assert(ret == false);
+  }
+
+  if (static_cast<StatsType>(settings::SettingsManager::GetInt(
+      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+    stats::BackendStatsContext::GetInstance()->IncrementIndexInserts(metadata);
   }
 
   return ret;
@@ -165,6 +186,13 @@ void SKIPLIST_INDEX_TYPE::Scan(
   if (scan_direction == ScanDirectionType::BACKWARD) {
     std::reverse(result.begin(), result.end());
   }
+
+  if (static_cast<StatsType>(settings::SettingsManager::GetInt(
+      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+    stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
+        result.size(), metadata);
+  }
+
 }
 
 /*
@@ -212,6 +240,13 @@ void SKIPLIST_INDEX_TYPE::ScanAllKeys(std::vector<ValueType> &result) {
     result.push_back(it->second);
     it++;
   }
+
+  if (static_cast<StatsType>(settings::SettingsManager::GetInt(
+      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+    stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
+        result.size(), metadata);
+  }
+
 }
 
 SKIPLIST_TEMPLATE_ARGUMENTS
@@ -226,6 +261,12 @@ void SKIPLIST_INDEX_TYPE::ScanKey(
 
   // This function in BwTree fills a given vector
   container.GetValue(index_key, result);
+
+  if (static_cast<StatsType>(settings::SettingsManager::GetInt(
+      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+    stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
+        result.size(), metadata);
+  }
 
   LOG_TRACE("ScanKey(%s) - COMPLETE - Result vector size: %zu", key->GetInfo().c_str(), result.size());
 
