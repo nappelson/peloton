@@ -795,8 +795,7 @@ class SkipList {
       }
 
       // Iterate until we find first node greater than or equal to key
-      while (!node->is_edge_tower &&
-             skip_list->key_cmp_less(curr_node_->kv_p.first, start_key)) {
+      while (!node->is_edge_tower && !skip_list->key_cmp_greater_equal(node->kv_p.first, start_key)) {
         node = GetAddress(node->next_node[0]);
       }
 
