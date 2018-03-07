@@ -100,7 +100,7 @@ class SkipList {
   bool Insert(const KeyType &key, const ValueType &value) {
     auto epoch = epoch_manager_.JoinEpoch();
 
-    PrintSkipList();
+    //PrintSkipList();
 
     std::vector<Node *> parents = FindParents(key, value);
 
@@ -124,8 +124,7 @@ class SkipList {
       }
 
       // Key already inserted
-      if (!new_node->is_edge_tower && key_cmp_equal(key, next_node->kv_p.first) &&
-          (!support_duplicates_ || value_cmp_equal(value, next_node->kv_p.second))) {
+      if (NodeEqual(key, value, next_node, false)) {
         if (current_level == 0) {
           epoch_manager_.LeaveEpoch(epoch);
           return false;
@@ -218,7 +217,7 @@ class SkipList {
       }
 
       // found the node
-      if (NodeEqual(key, val, del_node)) {
+      if (NodeEqual(key, val, del_node, true)) {
         break;
       }
 
@@ -277,7 +276,7 @@ class SkipList {
       }
 
       // something inserted after parent
-      if (!NodeEqual(key, val, next_tmp)) {
+      if (!NodeEqual(key, val, next_tmp, true)) {
         parents[current_level] =
             UpdateParent(next_tmp, current_level, key, val);
         continue;
@@ -435,7 +434,7 @@ class SkipList {
   void GetValue(const KeyType &search_key, std::vector<ValueType> &value_list) {
     auto epoch_node = epoch_manager_.JoinEpoch();
 
-    PrintSkipList();
+    //PrintSkipList();
     PL_ASSERT(IsSorted());
 
     auto curr_node = FindNode(search_key);
@@ -584,17 +583,17 @@ class SkipList {
  * NOT thread or epoch safe
  */
   void PrintSkipList() {
-    LOG_DEBUG("----- Start Tower -----\n");
+    LOG_INFO("----- Start ToweR -----\n");
     Node *curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
     while (!curr_node_->is_edge_tower) {
       if (!IsLogicalDeleted(curr_node_)) {
-        LOG_DEBUG("Key: %s | Height %zu",
+        LOG_INFO("Key: %s | Height %zu",
                   curr_node_->kv_p.first.GetInfo().c_str(),
                   curr_node_->next_node.size());
       }
       curr_node_ = GetAddress(curr_node_->next_node[0]);
     }
-    LOG_DEBUG("------ End Tower ------\n");
+    LOG_INFO("------ End Tower ------\n");
   }
 
  private:
@@ -645,11 +644,14 @@ class SkipList {
 
   /*
    * Returns whether the node is equal to the key value pair
+   * If duplicate keys are not supported then only check key equality
    */
-  inline bool NodeEqual(KeyType key, ValueType value, Node *node) {
+  inline bool NodeEqual(KeyType key, ValueType value,
+          Node *node, bool check_value) {
+    check_value = check_value | support_duplicates_;
     return (!node->is_edge_tower &&
             key_cmp_equal(node->kv_p.first, key) &&
-            value_cmp_equal(node->kv_p.second, value));
+            (!check_value || value_cmp_equal(node->kv_p.second, value)));
   }
 
   /*

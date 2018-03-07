@@ -288,7 +288,6 @@ void TestingIndexUtil::UniqueKeyMultiThreadedTest(const IndexType index_type) {
                      pool, scale_factor);
 
   index.get()->PrintIndex();
-
   LaunchParallelTest(num_threads, TestingIndexUtil::DeleteHelper, index.get(),
                      pool, scale_factor);
 
@@ -311,6 +310,8 @@ void TestingIndexUtil::UniqueKeyMultiThreadedTest(const IndexType index_type) {
   type::Value key2_val0 = (key2->GetValue(0));
   type::Value key2_val1 = (key2->GetValue(1));
 
+  LOG_INFO("-----------Done Inserting/Deleting -------------- \n");
+  index.get()->PrintIndex();
   LOG_INFO("%s", index->GetInfo().c_str());
 
   index->ScanKey(key0.get(), location_ptrs);
