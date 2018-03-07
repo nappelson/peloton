@@ -14,6 +14,7 @@
 #pragma once
 
 #include <cstdint>
+#include <sstream>
 
 #include "internal_types.h"
 
@@ -31,6 +32,12 @@ class ItemPointer {
   ItemPointer() : block(INVALID_OID), offset(INVALID_OID) {}
 
   ItemPointer(oid_t block, oid_t offset) : block(block), offset(offset) {}
+
+  std::string GetInfo() {
+    std::stringstream result;
+    result << "(" << block << "," << offset << ")";
+    return result.str();
+  }
 
   bool IsNull() const {
     return (block == INVALID_OID && offset == INVALID_OID);

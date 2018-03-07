@@ -282,7 +282,7 @@ void TestingIndexUtil::UniqueKeyMultiThreadedTest(const IndexType index_type) {
   const catalog::Schema *key_schema = index->GetKeySchema();
 
   // Parallel Test
-  size_t num_threads = 4;
+  size_t num_threads = 1;
   size_t scale_factor = 1;
   LaunchParallelTest(num_threads, TestingIndexUtil::InsertHelper, index.get(),
                      pool, scale_factor);
