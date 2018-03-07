@@ -115,7 +115,6 @@ class SkipList {
     new_node->next_node = std::vector<Node *>(height);
 
     while (current_level < height) {
-      //TODO: Should this be wrapped in GetAddress?
       Node *next_node = parents[current_level]->next_node.at(current_level);
 
       // parent was deleted
@@ -125,7 +124,8 @@ class SkipList {
       }
 
       // Key already inserted
-      if (NodeEqual(key, value, next_node, false)) {
+      if ((!support_duplicates_ && NodeEqual(key, next_node)) ||
+              NodeEqual(key, value, next_node)) {
         if (current_level == 0) {
           epoch_manager_.LeaveEpoch(epoch);
           return false;
@@ -193,14 +193,9 @@ class SkipList {
     return res;
   }
 
-  bool Remove(const KeyType &key) {
-      LOG_INFO("Called this function\n\n\n\n");
-      return Remove(key, nullptr); }
-
   /*
    * Delete
    */
-  // TODO: fix delete insert (same node) race condition
   // TODO: Add a check for attempting to delete a node that is not in the index
   bool Remove(const KeyType &key, const ValueType &val) {
     auto epoch = epoch_manager_.JoinEpoch();
@@ -220,7 +215,7 @@ class SkipList {
       }
 
       // found the node
-      if (NodeEqual(key, val, del_node, true)) {
+      if (NodeEqual(key, val, del_node)) {
         break;
       }
 
@@ -284,7 +279,7 @@ class SkipList {
       }
 
       // something inserted after parent
-      if (!NodeEqual(key, val, next_tmp, true)) {
+      if (!NodeEqual(key, val, next_tmp)) {
         parents[current_level] =
             UpdateParent(next_tmp, current_level, key, val);
         continue;
@@ -585,7 +580,6 @@ class SkipList {
     return cur_node;
   }
 
-
   /*
  * Prints contents of tree
  * NOT thread or epoch safe
@@ -652,17 +646,21 @@ class SkipList {
   }
 
   /*
-   * Returns whether the node is equal to the key value pair
-   * If duplicate keys are not supported then only check key equality
+   * Returns whether the node is equal to the key
    */
-  inline bool NodeEqual(KeyType key, ValueType value,
-          Node *node, bool check_value) {
-    check_value = check_value | support_duplicates_;
+  inline bool NodeEqual(KeyType key, Node *node) {
     return (!node->is_edge_tower &&
-            key_cmp_equal(node->kv_p.first, key) &&
-            (!check_value || value_cmp_equal(node->kv_p.second, value)));
+            key_cmp_equal(node->kv_p.first, key));
   }
 
+  /*
+   * Returns whether the node is equal to the key value pair
+   */
+  inline bool NodeEqual(KeyType key, ValueType value, Node *node) {
+    return (!node->is_edge_tower &&
+            key_cmp_equal(node->kv_p.first, key) &&
+            value_cmp_equal(node->kv_p.second, value));
+  }
   /*
    * Returns true if node is not end tower and node.key < key or
    * node.key = key and node.value != value (only if duplicates supported)
@@ -694,8 +692,6 @@ class SkipList {
   inline bool NodeGreaterThan(KeyType key, Node *node) const {
     return (node->is_edge_tower || key_cmp_greater(key, node->kv_p.first));
   }
-
-
 
   bool IsSorted() {
     auto node = GetAddress(root_);
@@ -768,7 +764,7 @@ class SkipList {
   class ForwardIterator {
    private:
     Node *curr_node_;
-    SkipList* skip_list_;
+    SkipList *skip_list_;
 
    public:
     /*
@@ -806,15 +802,14 @@ class SkipList {
       skip_list_ = skip_list;
       auto node = skip_list->FindNode(start_key);
 
-
-
       // If we start with start tower, jump to next
       if (node->is_edge_tower) {
         node = GetAddress(node->next_node[0]);
       }
 
       // Iterate until we find first node greater than or equal to key
-      while (!node->is_edge_tower && !skip_list->key_cmp_greater_equal(node->kv_p.first, start_key)) {
+      while (!node->is_edge_tower &&
+             !skip_list->key_cmp_greater_equal(node->kv_p.first, start_key)) {
         node = GetAddress(node->next_node[0]);
       }
 
@@ -825,8 +820,12 @@ class SkipList {
         PL_ASSERT(skip_list->GetRoot() == node);
         LOG_DEBUG("Iterator starting at start tower");
       } else {
-        LOG_DEBUG("Iterator starting at key: %s", node->kv_p.first.GetInfo().c_str());
+        LOG_DEBUG("Iterator starting at key: %s",
+                  node->kv_p.first.GetInfo().c_str());
       }
+
+      // set the node we found to be the current node
+      curr_node_ = node;
 
       // Leave epoch
       // TODO: Why shouldnt we leave the epoch upon destruction?
@@ -854,6 +853,9 @@ class SkipList {
      * True if End of Iterator
      */
     inline bool IsEnd() {
+      if (curr_node_ == nullptr) {
+        return true;
+      }
       return curr_node_->is_edge_tower && curr_node_ != skip_list_->GetRoot();
     }
 
