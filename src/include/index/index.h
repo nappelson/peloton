@@ -395,6 +395,8 @@ class Index : public Printable {
    */
   virtual std::string GetTypeName() const = 0;
 
+  virtual void PrintIndex() { return;};
+
   /**
    * @brief Returns if this index only has unique keys
    */

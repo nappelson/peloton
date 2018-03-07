@@ -578,6 +578,25 @@ class SkipList {
     return cur_node;
   }
 
+
+  /*
+ * Prints contents of tree
+ * NOT thread or epoch safe
+ */
+  void PrintSkipList() {
+    LOG_DEBUG("----- Start Tower -----\n");
+    Node *curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
+    while (!curr_node_->is_edge_tower) {
+      if (!IsLogicalDeleted(curr_node_)) {
+        LOG_DEBUG("Key: %s | Height %zu",
+                  curr_node_->kv_p.first.GetInfo().c_str(),
+                  curr_node_->next_node.size());
+      }
+      curr_node_ = GetAddress(curr_node_->next_node[0]);
+    }
+    LOG_DEBUG("------ End Tower ------\n");
+  }
+
  private:
   ///////////////////////////////////////////////////////////////////
   // SkipList Helpers
@@ -665,23 +684,7 @@ class SkipList {
     return (node->is_edge_tower || key_cmp_greater(key, node->kv_p.first));
   }
 
-  /*
-   * Prints contents of tree
-   * NOT thread or epoch safe
-   */
-  void PrintSkipList() {
-    LOG_DEBUG("----- Start Tower -----\n");
-    Node *curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
-    while (!curr_node_->is_edge_tower) {
-      if (!IsLogicalDeleted(curr_node_)) {
-        LOG_DEBUG("Key: %s | Height %zu",
-                  curr_node_->kv_p.first.GetInfo().c_str(),
-                  curr_node_->next_node.size());
-      }
-      curr_node_ = GetAddress(curr_node_->next_node[0]);
-    }
-    LOG_DEBUG("------ End Tower ------\n");
-  }
+
 
   bool IsSorted() {
     auto node = GetAddress(root_);

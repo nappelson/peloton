@@ -276,6 +276,14 @@ void SKIPLIST_INDEX_TYPE::ScanKey(
 SKIPLIST_TEMPLATE_ARGUMENTS
 std::string SKIPLIST_INDEX_TYPE::GetTypeName() const { return "SkipList"; }
 
+SKIPLIST_TEMPLATE_ARGUMENTS
+void SKIPLIST_INDEX_TYPE::PrintIndex() {
+  container.PrintSkipList();
+  return;
+}
+
+
+
 // IMPORTANT: Make sure you don't exceed CompactIntegerKey_MAX_SLOTS
 
 template class SkipListIndex<

@@ -286,6 +286,9 @@ void TestingIndexUtil::UniqueKeyMultiThreadedTest(const IndexType index_type) {
   size_t scale_factor = 1;
   LaunchParallelTest(num_threads, TestingIndexUtil::InsertHelper, index.get(),
                      pool, scale_factor);
+
+  index.get()->PrintIndex();
+
   LaunchParallelTest(num_threads, TestingIndexUtil::DeleteHelper, index.get(),
                      pool, scale_factor);
 

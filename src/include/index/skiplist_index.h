@@ -78,6 +78,8 @@ class SkipListIndex : public Index {
 
   std::string GetTypeName() const;
 
+  void PrintIndex();
+
   // TODO: Implement this
   size_t GetMemoryFootprint() { return 0; }
 
