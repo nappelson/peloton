@@ -115,6 +115,7 @@ class SkipList {
     new_node->next_node = std::vector<Node *>(height);
 
     while (current_level < height) {
+      //TODO: Should this be wrapped in GetAddress?
       Node *next_node = parents[current_level]->next_node.at(current_level);
 
       // parent was deleted
@@ -588,8 +589,9 @@ class SkipList {
     Node *curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
     while (!curr_node_->is_edge_tower) {
       if (!IsLogicalDeleted(curr_node_)) {
-        LOG_DEBUG("Key: %s | Height %zu",
+        LOG_DEBUG("Key: %s | Value %s | Height %zu",
                   curr_node_->kv_p.first.GetInfo().c_str(),
+                  curr_node_->kv_p.second->GetInfo().c_str(),
                   curr_node_->next_node.size());
       }
       curr_node_ = GetAddress(curr_node_->next_node[0]);
@@ -757,6 +759,7 @@ class SkipList {
   class ForwardIterator {
    private:
     Node *curr_node_;
+    SkipList* skip_list_;
 
    public:
     /*
@@ -773,6 +776,7 @@ class SkipList {
       auto epoch_node = skip_list->epoch_manager_.JoinEpoch();
 
       curr_node_ = GetAddress(skip_list->GetRoot()->next_node[0]);
+      skip_list_ = skip_list;
 
       // Leave epoch
       skip_list->epoch_manager_.LeaveEpoch(epoch_node);
@@ -790,7 +794,10 @@ class SkipList {
       // Join Epoch
       auto epoch_node = skip_list->epoch_manager_.JoinEpoch();
 
+      skip_list_ = skip_list;
       auto node = skip_list->FindNode(start_key);
+
+
 
       // If we start with start tower, jump to next
       if (node->is_edge_tower) {
@@ -804,6 +811,13 @@ class SkipList {
 
       PL_ASSERT(node->is_edge_tower ||
                 skip_list->key_cmp_greater_equal(node->kv_p.first, start_key));
+
+      if (node->is_edge_tower) {
+        PL_ASSERT(skip_list->GetRoot() == node);
+        LOG_DEBUG("Iterator starting at start tower");
+      } else {
+        LOG_DEBUG("Iterator starting at key: %s", node->kv_p.first.GetInfo().c_str());
+      }
 
       // Leave epoch
       // TODO: Why shouldnt we leave the epoch upon destruction?
@@ -830,7 +844,9 @@ class SkipList {
     /*
      * True if End of Iterator
      */
-    inline bool IsEnd() { return curr_node_->is_edge_tower; }
+    inline bool IsEnd() {
+      return curr_node_->is_edge_tower && curr_node_ != skip_list_->GetRoot();
+    }
 
     ///////////////////////////////////////////////////////////////////
     // Operators
