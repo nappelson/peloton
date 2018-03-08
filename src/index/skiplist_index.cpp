@@ -155,13 +155,8 @@ void SKIPLIST_INDEX_TYPE::Scan(
 
   if (csp_p->IsPointQuery()) {
     // point query
-    const auto point_query_key_p = csp_p->GetPointQueryKey();
+    ScanKey(csp_p->GetPointQueryKey(), result);
 
-    KeyType point_query_key;
-    point_query_key.SetFromKey(point_query_key_p);
-
-    const auto node = container.FindNode(point_query_key);
-    result.push_back(node->kv_p.second);
   } else if (csp_p->IsFullIndexScan()) {
     // full scan
     for (auto scan_itr = container.Begin(); !scan_itr.IsEnd(); scan_itr++) {
