@@ -277,6 +277,10 @@ void SKIPLIST_INDEX_TYPE::PrintIndex() {
   return;
 }
 
+SKIPLIST_TEMPLATE_ARGUMENTS
+size_t SKIPLIST_INDEX_TYPE::GetMemoryFootprint() {
+  return container.GetMemoryFootprint();
+}
 
 
 // IMPORTANT: Make sure you don't exceed CompactIntegerKey_MAX_SLOTS

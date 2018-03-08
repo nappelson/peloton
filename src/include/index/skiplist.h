@@ -599,6 +599,15 @@ class SkipList {
     LOG_INFO("------ End Tower ------\n");
   }
 
+  size_t GetMemoryFootprint() {
+    size_t size = 0;
+    for (auto scan_itr = Begin(); !scan_itr.IsEnd(); scan_itr++) {
+      size++;
+    }
+
+    return size * sizeof(Node);
+  }
+
  private:
   ///////////////////////////////////////////////////////////////////
   // SkipList Helpers
