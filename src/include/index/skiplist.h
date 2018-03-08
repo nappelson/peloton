@@ -12,11 +12,11 @@
 
 #pragma once
 
+#include <stdlib.h>
+#include <strings.h>
 #include <atomic>
 #include <forward_list>
 #include <memory>
-#include <stdlib.h>
-#include <strings.h>
 #include <thread>
 #include <vector>
 
@@ -92,6 +92,23 @@ class SkipList {
     root_ = start;
   }
 
+  ~SkipList() {
+    // Free all KV nodes in skip list
+    auto scan_itr = Begin();
+
+    while (!scan_itr.IsEnd()) {
+      epoch_manager_.AddGarbageNode(scan_itr.GetNode());
+      scan_itr++;
+    }
+
+    PL_ASSERT(scan_itr.IsEnd() && scan_itr.GetNode() != GetRoot());
+    // Free start and end towers
+    epoch_manager_.AddGarbageNode(scan_itr.GetNode());
+    epoch_manager_.AddGarbageNode(GetRoot());
+    root_ = nullptr;
+    LOG_TRACE("SkipList freed");
+  }
+
   void SetSupportDuplicates(bool support) { support_duplicates_ = support; }
 
   /*
@@ -100,7 +117,7 @@ class SkipList {
   bool Insert(const KeyType &key, const ValueType &value) {
     auto epoch = epoch_manager_.JoinEpoch();
 
-    //PrintSkipList();
+    // PrintSkipList();
 
     std::vector<Node *> parents = FindParents(key, value);
 
@@ -125,7 +142,7 @@ class SkipList {
 
       // Key already inserted
       if ((!support_duplicates_ && NodeEqual(key, next_node)) ||
-              NodeEqual(key, value, next_node)) {
+          NodeEqual(key, value, next_node)) {
         if (current_level == 0) {
           epoch_manager_.LeaveEpoch(epoch);
           return false;
@@ -228,10 +245,9 @@ class SkipList {
       parents[0] = UpdateParent(parents[0], 0 /* level */, key, val);
     } while (true);
 
-
     LOG_INFO("Removing: Key: %s | Value %s \n",
-                  del_node->kv_p.first.GetInfo().c_str(),
-                  del_node->kv_p.second->GetInfo().c_str());
+             del_node->kv_p.first.GetInfo().c_str(),
+             del_node->kv_p.second->GetInfo().c_str());
 
     // Node has not been fully inserted so is not available for deletion
     if (!del_node->inserted) {
@@ -384,10 +400,10 @@ class SkipList {
   }
 
   /*
-  * Search for value given key (WITH DUPLICATES)
-  * Returns true if found, and sets value to value, else returns false
-  * TODO: This function may be unnecessary, but implementing just in case
-  */
+   * Search for value given key (WITH DUPLICATES)
+   * Returns true if found, and sets value to value, else returns false
+   * TODO: This function may be unnecessary, but implementing just in case
+   */
   bool Search(const KeyType &key, ValueType &value,
               const ValueType wanted_value) const {
     // This function should only really be used with duplicates enabled
@@ -437,7 +453,7 @@ class SkipList {
   void GetValue(const KeyType &search_key, std::vector<ValueType> &value_list) {
     auto epoch_node = epoch_manager_.JoinEpoch();
 
-    //PrintSkipList();
+    // PrintSkipList();
     PL_ASSERT(IsSorted());
 
     auto curr_node = FindNode(search_key);
@@ -581,18 +597,18 @@ class SkipList {
   }
 
   /*
- * Prints contents of tree
- * NOT thread or epoch safe
- */
+   * Prints contents of tree
+   * NOT thread or epoch safe
+   */
   void PrintSkipList() {
     LOG_INFO("----- Start ToweR -----\n");
     Node *curr_node_ = GetAddress(this->GetRoot()->next_node[0]);
     while (!curr_node_->is_edge_tower) {
       if (!IsLogicalDeleted(curr_node_)) {
         LOG_INFO("Key: %s | Value %s | Height %zu",
-                  curr_node_->kv_p.first.GetInfo().c_str(),
-                  curr_node_->kv_p.second->GetInfo().c_str(),
-                  curr_node_->next_node.size());
+                 curr_node_->kv_p.first.GetInfo().c_str(),
+                 curr_node_->kv_p.second->GetInfo().c_str(),
+                 curr_node_->next_node.size());
       }
       curr_node_ = GetAddress(curr_node_->next_node[0]);
     }
@@ -600,6 +616,9 @@ class SkipList {
   }
 
   size_t GetMemoryFootprint() {
+    // If skiplist has been freed, return 0
+    if (GetRoot() == nullptr) return 0;
+
     size_t size = 0;
     for (auto scan_itr = Begin(); !scan_itr.IsEnd(); scan_itr++) {
       size++;
@@ -658,16 +677,14 @@ class SkipList {
    * Returns whether the node is equal to the key
    */
   inline bool NodeEqual(KeyType key, Node *node) {
-    return (!node->is_edge_tower &&
-            key_cmp_equal(node->kv_p.first, key));
+    return (!node->is_edge_tower && key_cmp_equal(node->kv_p.first, key));
   }
 
   /*
    * Returns whether the node is equal to the key value pair
    */
   inline bool NodeEqual(KeyType key, ValueType value, Node *node) {
-    return (!node->is_edge_tower &&
-            key_cmp_equal(node->kv_p.first, key) &&
+    return (!node->is_edge_tower && key_cmp_equal(node->kv_p.first, key) &&
             value_cmp_equal(node->kv_p.second, value));
   }
   /*
@@ -853,9 +870,9 @@ class SkipList {
     ForwardIterator &operator=(ForwardIterator &&other);
 
     /*
-    * Destructor
+     * Destructor
      * TODO: Why shouldnt we leave the epoch upon destruction?
-    */
+     */
     ~ForwardIterator() { return; }
 
     /*
@@ -868,13 +885,15 @@ class SkipList {
       return curr_node_->is_edge_tower && curr_node_ != skip_list_->GetRoot();
     }
 
+    inline Node *GetNode() { return curr_node_; }
+
     ///////////////////////////////////////////////////////////////////
     // Operators
     ///////////////////////////////////////////////////////////////////
 
     /*
-    * operator= Assigns one object to another
-    */
+     * operator= Assigns one object to another
+     */
     ForwardIterator &operator=(const ForwardIterator &other);
 
     /*
@@ -924,9 +943,9 @@ class SkipList {
     inline ForwardIterator operator--(int);
 
     /*
-    * operator * - Return the value reference currently pointed to by this
-    * iterator
-    */
+     * operator * - Return the value reference currently pointed to by this
+     * iterator
+     */
     inline const KeyValuePair &operator*() { return &(curr_node_->kv_p); }
 
     /*

@@ -9,16 +9,16 @@
 // Copyright (c) 2015-17, Carnegie Mellon University Database Group
 //
 //===----------------------------------------------------------------------===//
+#include "index/skiplist_index.h"
 #include <include/settings/setting_id.h>
 #include <include/settings/settings_manager.h>
-#include "index/skiplist_index.h"
 
 #include "common/logger.h"
 #include "index/index_key.h"
 #include "index/scan_optimizer.h"
+#include "index/skiplist.h"
 #include "statistics/stats_aggregator.h"
 #include "storage/tuple.h"
-#include "index/skiplist.h"
 
 namespace peloton {
 namespace index {
@@ -53,11 +53,10 @@ bool SKIPLIST_INDEX_TYPE::InsertEntry(const storage::Tuple *key,
   KeyType index_key;
   index_key.SetFromKey(key);
 
-
   bool ret = container.Insert(index_key, value);
 
   if (static_cast<StatsType>(settings::SettingsManager::GetInt(
-      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+          settings::SettingId::stats_mode)) != StatsType::INVALID) {
     stats::BackendStatsContext::GetInstance()->IncrementIndexInserts(metadata);
   }
 
@@ -85,7 +84,7 @@ bool SKIPLIST_INDEX_TYPE::DeleteEntry(const storage::Tuple *key,
   bool ret = container.Remove(index_key, value);
 
   if (static_cast<StatsType>(settings::SettingsManager::GetInt(
-      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+          settings::SettingId::stats_mode)) != StatsType::INVALID) {
     stats::BackendStatsContext::GetInstance()->IncrementIndexDeletes(
         delete_count, metadata);
   }
@@ -115,7 +114,6 @@ bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
   bool ret = container.ConditionalInsert(index_key, value, predicate,
                                          &predicate_satisfied);
 
-
   // If predicate is not satisfied then we know insertion successes
   if (predicate_satisfied == false) {
     // So it should always succeed?
@@ -127,7 +125,7 @@ bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
   }
 
   if (static_cast<StatsType>(settings::SettingsManager::GetInt(
-      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+          settings::SettingId::stats_mode)) != StatsType::INVALID) {
     stats::BackendStatsContext::GetInstance()->IncrementIndexInserts(metadata);
   }
 
@@ -173,7 +171,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
 
     for (auto scan_itr = container.Begin(index_low_key);
          !scan_itr.IsEnd() &&
-             container.key_cmp_less_equal(scan_itr->first, index_high_key);
+         container.key_cmp_less_equal(scan_itr->first, index_high_key);
          scan_itr++) {
       result.push_back(scan_itr->second);
     }
@@ -183,11 +181,10 @@ void SKIPLIST_INDEX_TYPE::Scan(
   }
 
   if (static_cast<StatsType>(settings::SettingsManager::GetInt(
-      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+          settings::SettingId::stats_mode)) != StatsType::INVALID) {
     stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
         result.size(), metadata);
   }
-
 }
 
 /*
@@ -237,11 +234,10 @@ void SKIPLIST_INDEX_TYPE::ScanAllKeys(std::vector<ValueType> &result) {
   }
 
   if (static_cast<StatsType>(settings::SettingsManager::GetInt(
-      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+          settings::SettingId::stats_mode)) != StatsType::INVALID) {
     stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
         result.size(), metadata);
   }
-
 }
 
 SKIPLIST_TEMPLATE_ARGUMENTS
@@ -253,17 +249,17 @@ void SKIPLIST_INDEX_TYPE::ScanKey(
 
   LOG_TRACE("Scanning for key %s", key->GetInfo().c_str());
 
-
   // This function in BwTree fills a given vector
   container.GetValue(index_key, result);
 
   if (static_cast<StatsType>(settings::SettingsManager::GetInt(
-      settings::SettingId::stats_mode)) != StatsType::INVALID) {
+          settings::SettingId::stats_mode)) != StatsType::INVALID) {
     stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
         result.size(), metadata);
   }
 
-  LOG_TRACE("ScanKey(%s) - COMPLETE - Result vector size: %zu", key->GetInfo().c_str(), result.size());
+  LOG_TRACE("ScanKey(%s) - COMPLETE - Result vector size: %zu",
+            key->GetInfo().c_str(), result.size());
 
   return;
 }
@@ -281,7 +277,6 @@ SKIPLIST_TEMPLATE_ARGUMENTS
 size_t SKIPLIST_INDEX_TYPE::GetMemoryFootprint() {
   return container.GetMemoryFootprint();
 }
-
 
 // IMPORTANT: Make sure you don't exceed CompactIntegerKey_MAX_SLOTS
 

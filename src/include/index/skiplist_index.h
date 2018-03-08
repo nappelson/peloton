@@ -12,13 +12,13 @@
 
 #pragma once
 
-#include <vector>
-#include <string>
 #include <map>
+#include <string>
+#include <vector>
 
 #include "catalog/manager.h"
-#include "common/platform.h"
 #include "common/internal_types.h"
+#include "common/platform.h"
 #include "index/index.h"
 
 #include "index/skiplist.h"
