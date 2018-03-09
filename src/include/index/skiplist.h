@@ -97,7 +97,7 @@ class SkipList {
     auto scan_itr = Begin();
 
     while (!scan_itr.IsEnd()) {
-      //epoch_manager_.AddGarbageNode(scan_itr.GetNode());
+      // epoch_manager_.AddGarbageNode(scan_itr.GetNode());
       auto temp = scan_itr.GetNode();
       scan_itr++;
       delete temp;
@@ -105,8 +105,8 @@ class SkipList {
 
     PL_ASSERT(scan_itr.IsEnd() && scan_itr.GetNode() != GetRoot());
     // Free start and end towers
-    //epoch_manager_.AddGarbageNode(scan_itr.GetNode());
-    //epoch_manager_.AddGarbageNode(GetRoot());
+    // epoch_manager_.AddGarbageNode(scan_itr.GetNode());
+    // epoch_manager_.AddGarbageNode(GetRoot());
     delete scan_itr.GetNode();
     delete GetRoot();
     root_ = nullptr;
@@ -148,7 +148,7 @@ class SkipList {
       if ((!support_duplicates_ && NodeEqual(key, next_node)) ||
           NodeEqual(key, value, next_node)) {
         if (current_level == 0) {
-	  epoch_manager_.AddGarbageNode(new_node);
+          epoch_manager_.AddGarbageNode(new_node);
           epoch_manager_.LeaveEpoch(epoch);
           return false;
         }
@@ -1101,7 +1101,7 @@ class EpochManager {
     }
 
     PL_ASSERT(epoch_node_list_.empty());
-    LOG_TRACE("GC has finished freeing all garbage nodes");
+    LOG_DEBUG("GC has finished freeing all garbage nodes");
   }
 
   /*
@@ -1206,6 +1206,7 @@ class EpochManager {
            garbage_node_ptr != nullptr;
            garbage_node_ptr = next_garbage_node_ptr) {
         next_garbage_node_ptr = garbage_node_ptr->next_ptr;
+        delete garbage_node_ptr->node_ptr;
         delete garbage_node_ptr;
       }
       auto head_epoch_node_ptr = epoch_node_list_.front();
