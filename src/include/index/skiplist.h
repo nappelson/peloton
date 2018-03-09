@@ -624,10 +624,21 @@ class SkipList {
     // If skiplist has been freed, return 0
     if (GetRoot() == nullptr) return 0;
 
-    size_t size = 0;
-    for (auto scan_itr = Begin(); !scan_itr.IsEnd(); scan_itr++) {
+    auto epoch_node = epoch_manager_.JoinEpoch();
+
+    // Start at start tower
+    auto curr_node = GetRoot();
+    size_t size = 1;
+
+    while (!curr_node->is_edge_tower) {
       size++;
+      curr_node = GetAddress(curr_node->next_node[0]);
     }
+
+    // Add one for end tower
+    size++;
+
+    epoch_manager_.LeaveEpoch(epoch_node);
 
     return size * sizeof(Node);
   }
