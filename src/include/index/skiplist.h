@@ -627,7 +627,7 @@ class SkipList {
     auto epoch_node = epoch_manager_.JoinEpoch();
 
     // Start at start tower
-    auto curr_node = GetRoot();
+    auto curr_node = GetRoot()->next_node[0];
     size_t size = 1;
 
     while (!curr_node->is_edge_tower) {
