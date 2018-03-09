@@ -46,7 +46,7 @@ void TestingIndexUtil::BasicTest(const IndexType index_type) {
 
   // INSERT
   index->InsertEntry(key0.get(), TestingIndexUtil::item0.get());
-
+  LOG_DEBUG("Footpring after insert: %zu", index->GetMemoryFootprint());
   // SCAN
   index->ScanKey(key0.get(), location_ptrs);
   EXPECT_EQ(1, location_ptrs.size());
@@ -55,6 +55,7 @@ void TestingIndexUtil::BasicTest(const IndexType index_type) {
 
   // DELETE
   index->DeleteEntry(key0.get(), TestingIndexUtil::item0.get());
+  LOG_DEBUG("Footpring after delete: %zu", index->GetMemoryFootprint());
 
   index->ScanKey(key0.get(), location_ptrs);
   EXPECT_EQ(0, location_ptrs.size());
