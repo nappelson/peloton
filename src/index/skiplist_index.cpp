@@ -10,15 +10,12 @@
 //
 //===----------------------------------------------------------------------===//
 #include "index/skiplist_index.h"
-#include <include/settings/setting_id.h>
-#include <include/settings/settings_manager.h>
 
-#include "common/logger.h"
 #include "index/index_key.h"
 #include "index/scan_optimizer.h"
-#include "index/skiplist.h"
+#include "settings/setting_id.h"
+#include "settings/settings_manager.h"
 #include "statistics/stats_aggregator.h"
-#include "storage/tuple.h"
 
 namespace peloton {
 namespace index {
@@ -171,7 +168,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
 
     for (auto scan_itr = container.Begin(index_low_key);
          !scan_itr.IsEnd() &&
-         container.key_cmp_less_equal(scan_itr->first, index_high_key);
+             container.key_cmp_less_equal(scan_itr->first, index_high_key);
          scan_itr++) {
       result.push_back(scan_itr->second);
     }
