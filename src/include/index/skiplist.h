@@ -105,10 +105,10 @@ class SkipList {
 
     PL_ASSERT(scan_itr.IsEnd() && scan_itr.GetNode() != GetRoot());
     // Free start and end towers
-    // epoch_manager_.AddGarbageNode(scan_itr.GetNode());
-    // epoch_manager_.AddGarbageNode(GetRoot());
-    delete scan_itr.GetNode();
-    delete GetRoot();
+    epoch_manager_.AddGarbageNode(scan_itr.GetNode());
+    epoch_manager_.AddGarbageNode(GetRoot());
+    //    delete scan_itr.GetNode();
+    //    delete GetRoot();
     root_ = nullptr;
     LOG_TRACE("SkipList freed");
   }
@@ -540,14 +540,6 @@ class SkipList {
           curr_level == 0) {
         return curr_tower;
       }
-      //      if (curr_tower->is_edge_tower) {
-      //        LOG_DEBUG("On start tower | level = %d | search_key = %s",
-      //        curr_level, key.GetInfo().c_str());
-      //      } else {
-      //        LOG_DEBUG("On tower = %s | level = %d | search_key = %s",
-      //        curr_tower->kv_p.first.GetInfo().c_str(), curr_level,
-      //        key.GetInfo().c_str());
-      //      }
       curr_level--;
     }
   }
@@ -639,8 +631,12 @@ class SkipList {
     size++;
 
     epoch_manager_.LeaveEpoch(epoch_node);
+    LOG_INFO("Node count: %zu", size);
+    LOG_INFO("Size of nodes: %zu", size * sizeof(Node));
+    //    LOG_INFO("Size of epoch manager nodes: %zu",
+    //    epoch_manager_.GetMemoryFootprint());
 
-    return size * sizeof(Node);
+    return size * sizeof(Node) + epoch_manager_.GetMemoryFootprint();
   }
 
  private:
@@ -1053,6 +1049,27 @@ class EpochManager {
     }
   }
 
+  size_t GetMemoryFootprint() {
+    auto epoch_node_count = 0;
+    auto garbage_node_count = 0;
+    for (auto node_itr = epoch_node_list_.begin();
+         node_itr != epoch_node_list_.end(); node_itr++) {
+      auto current_node = *node_itr;
+      epoch_node_count++;
+
+      GarbageNode *next_garbage_node_ptr = nullptr;
+      for (auto garbage_node_ptr = current_node->garbage_list_ptr.load();
+           garbage_node_ptr != nullptr;
+           garbage_node_ptr = next_garbage_node_ptr) {
+        next_garbage_node_ptr = garbage_node_ptr->next_ptr;
+        garbage_node_count++;
+      }
+    }
+    return epoch_node_count * sizeof(EpochNode) +
+           garbage_node_count * sizeof(GarbageNode) +
+           garbage_node_count * sizeof(NodeType);
+  }
+
   std::forward_list<EpochNode *> &GetEpochNodeList() {
     return epoch_node_list_;
   }
@@ -1157,12 +1174,12 @@ class EpochManager {
    */
   void AddGarbageNode(const NodeType *node_ptr) {
     // TODO: Shouldn't this code be inside the while(1)
-    auto cur_epoch_node = *cur_epoch_node_itr_;
-    GarbageNode *garbage_node_ptr = new GarbageNode;
-    garbage_node_ptr->node_ptr = node_ptr;
-    garbage_node_ptr->next_ptr = cur_epoch_node->garbage_list_ptr.load();
 
     while (1) {
+      auto cur_epoch_node = *cur_epoch_node_itr_;
+      GarbageNode *garbage_node_ptr = new GarbageNode;
+      garbage_node_ptr->node_ptr = node_ptr;
+      garbage_node_ptr->next_ptr = cur_epoch_node->garbage_list_ptr.load();
       bool ret = cur_epoch_node->garbage_list_ptr.compare_exchange_strong(
           garbage_node_ptr->next_ptr, garbage_node_ptr);
 
@@ -1230,8 +1247,8 @@ class EpochManager {
    * PerformGarbageCollection()
    */
   void PerformGarbageCollection() {
-    ClearEpoch();
     CreateNewEpoch();
+    ClearEpoch();
   }
 
   /*

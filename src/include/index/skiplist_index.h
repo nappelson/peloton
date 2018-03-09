@@ -80,7 +80,6 @@ class SkipListIndex : public Index {
 
   void PrintIndex();
 
-  // TODO: Implement this
   size_t GetMemoryFootprint();
 
   bool NeedGC() { return container.NeedGarbageCollection(); }
