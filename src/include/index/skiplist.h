@@ -135,16 +135,17 @@ class SkipList {
 
     new_node->next_node = std::vector<Node *>(height);
 
+    // insert node into skiplist from bottom up
     while (current_level < height) {
       Node *next_node = parents[current_level]->next_node.at(current_level);
 
-      // parent was deleted
+      // parent was deleted need to find new parent
       if (IsMarked(next_node)) {
         parents[current_level] = UpdateParent(root_, current_level, key, value);
         continue;
       }
 
-      // Key already inserted
+      // Key already inserted, abort operation
       if ((!support_duplicates_ && NodeEqual(key, next_node)) ||
           NodeEqual(key, value, next_node)) {
         if (current_level == 0) {
@@ -157,7 +158,7 @@ class SkipList {
         PL_ASSERT(false);
       }
 
-      // Node inserted after parent
+      // Node inserted after parent need to find new parent
       if (NodeLessThan(key, next_node)) {
         parents[current_level] =
             UpdateParent(parents[current_level], current_level, key, value);
@@ -174,7 +175,7 @@ class SkipList {
       }
     }
 
-    // allow the node to be deleted
+    // Node successfully inserted, allow the node to be deleted
     new_node->inserted = true;
 
     epoch_manager_.LeaveEpoch(epoch);
@@ -216,9 +217,14 @@ class SkipList {
   }
 
   /*
-   * Delete
+   * In order to delete without worrying about delete/insert race
+   * conditions, we decided to mark the next pointers in each node
+   * that is being deleted. By doing that we can check if the node
+   * is being deleted and also update the pointer atomically. Additionally,
+   * to ensure that we do not delete nodes that have not been fully
+   * inserted we only delete nodes that have been marked successfully
+   * inserted.
    */
-  // TODO: Add a check for attempting to delete a node that is not in the index
   bool Remove(const KeyType &key, const ValueType &val) {
     auto epoch = epoch_manager_.JoinEpoch();
 
@@ -226,11 +232,11 @@ class SkipList {
 
     Node *del_node;
 
-    // Need to find the node we are deleting
+    // First find the node we are deleting
     do {
       del_node = parents[0]->next_node[0];
 
-      // bottom level parent being deleted
+      // bottom level parent being deleted, find new parent
       while (IsMarked(del_node)) {
         parents[0] = UpdateParent(root_, 0 /* level */, key, val);
         del_node = parents[0]->next_node[0];
@@ -241,7 +247,7 @@ class SkipList {
         break;
       }
 
-      // Node does not exist
+      // Node does not exist, abort operation
       if (!NodeLessThan(key, del_node)) {
         epoch_manager_.LeaveEpoch(epoch);
         return false;
@@ -249,10 +255,6 @@ class SkipList {
 
       parents[0] = UpdateParent(parents[0], 0 /* level */, key, val);
     } while (true);
-
-    LOG_INFO("Removing: Key: %s | Value %s \n",
-             del_node->kv_p.first.GetInfo().c_str(),
-             del_node->kv_p.second->GetInfo().c_str());
 
     // Node has not been fully inserted so is not available for deletion
     if (!del_node->inserted) {
@@ -264,10 +266,11 @@ class SkipList {
 
     bool marked_pointer = false;
 
+    // delete the node from the skiplist from the top down
     while (current_level >= 0) {
       Node *next_node = del_node->next_node.at(current_level);
 
-      // node already being deleted
+      // node already being deleted, abort operation
       if (!marked_pointer && IsMarked(next_node)) {
         epoch_manager_.LeaveEpoch(epoch);
         return false;
@@ -287,13 +290,13 @@ class SkipList {
 
       Node *next_tmp = parents[current_level]->next_node.at(current_level);
 
-      // parent node being deleted
+      // parent node being deleted, find new parent
       if (IsMarked(next_tmp)) {
         parents[current_level] = UpdateParent(root_, current_level, key, val);
         continue;
       }
 
-      // Node was deleted
+      // Node was deleted by another thread, abort operation
       if (NodeGreaterThan(key, next_tmp)) {
         epoch_manager_.LeaveEpoch(epoch);
         return false;
@@ -345,6 +348,7 @@ class SkipList {
     Node *current_node = root_;
     Node *next_node;
 
+    // First find the parent of the current Key
     // parent of one level is at least the parent of the level above
     while (current_tower >= 0) {
       next_node = GetAddress(current_node->next_node.at(current_tower));
@@ -362,6 +366,7 @@ class SkipList {
     current_tower = MAX_TOWER_HEIGHT - 1;
     current_node = parents.at(current_tower);
 
+    // Traverse same key as long as it does not equal the key we are looking for
     while (current_tower >= 0) {
       next_node =
           GetAddress(parents.at(current_tower)->next_node.at(current_tower));
