@@ -40,6 +40,14 @@ SKIPLIST_TEMPLATE_ARGUMENTS
 SKIPLIST_INDEX_TYPE::~SkipListIndex() {}
 
 /*
+ * Returns whether the index is in a valid state
+ */
+SKIPLIST_TEMPLATE_ARGUMENTS
+bool SKIPLIST_INDEX_TYPE::DoIntegrityCheck() {
+    return container.DoIntegrityCheck();
+}
+
+/*
  * InsertEntry() - insert a key-value pair into the map
  *
  * If the key value pair already exists in the map, just return false

@@ -116,6 +116,48 @@ class SkipList {
   void SetSupportDuplicates(bool support) { support_duplicates_ = support; }
 
   /*
+   * Checks the validity of the list by ensuring each level
+   * is sorted by key. If there is a node out of place it will
+   * remove the node and reorder it. Returns whether the skip list
+   * was valid.
+   */
+  bool DoIntegrityCheck() {
+    auto epoch = epoch_manager_.JoinEpoch();
+
+    unsigned int current_level = MAX_TOWER_HEIGHT - 1;
+
+    bool valid_structure = true;
+    while (current_level > 0) {
+        Node *cur_node = GetAddress(root_->next_node.at(current_level));
+
+        while (!cur_node->is_edge_tower) {
+            Node *next_node = GetAddress(cur_node->next_node.at(current_level));
+
+            if (next_node->is_edge_tower) {
+                break;
+            }
+            // Node out of place, need to reorder
+            if (!NodeLessThanEqual(next_node->kv_p.first, cur_node)) {
+                valid_structure = false;
+
+                Remove(next_node->kv_p.first, next_node->kv_p.second);
+                Insert(next_node->kv_p.first, next_node->kv_p.second);
+
+                // Validate level again
+                current_level++;
+                break;
+            }
+            cur_node = next_node;
+        }
+
+        current_level--;
+    }
+
+    epoch_manager_.LeaveEpoch(epoch);
+    return valid_structure;
+  }
+
+  /*
    * Insert
    */
   bool Insert(const KeyType &key, const ValueType &value) {

@@ -51,6 +51,8 @@ class SkipListIndex : public Index {
 
   ~SkipListIndex();
 
+  bool DoIntegrityCheck();
+
   bool InsertEntry(const storage::Tuple *key, ItemPointer *value);
 
   bool DeleteEntry(const storage::Tuple *key, ItemPointer *value);
