@@ -51,8 +51,6 @@ class EpochManager;
 template <typename KeyType, typename ValueType, typename KeyComparator,
           typename KeyEqualityChecker, typename ValueEqualityChecker>
 
-// Key Value Pair
-
 class SkipList {
  private:
   // Forward Declarations
@@ -107,8 +105,6 @@ class SkipList {
     // Free start and end towers
     epoch_manager_.AddGarbageNode(scan_itr.GetNode());
     epoch_manager_.AddGarbageNode(GetRoot());
-    //    delete scan_itr.GetNode();
-    //    delete GetRoot();
     root_ = nullptr;
     LOG_TRACE("SkipList freed");
   }
@@ -116,7 +112,7 @@ class SkipList {
   void SetSupportDuplicates(bool support) { support_duplicates_ = support; }
 
   /*
-   * Checks the validity of the list by ensuring each level
+   * DoIntegrityCheck() - Checks the validity of the list by ensuring each level
    * is sorted by key. If there is a node out of place it will
    * remove the node and reorder it. Returns whether the skip list
    * was valid.
@@ -128,29 +124,29 @@ class SkipList {
 
     bool valid_structure = true;
     while (current_level > 0) {
-        Node *cur_node = GetAddress(root_->next_node.at(current_level));
+      Node *cur_node = GetAddress(root_->next_node.at(current_level));
 
-        while (!cur_node->is_edge_tower) {
-            Node *next_node = GetAddress(cur_node->next_node.at(current_level));
+      while (!cur_node->is_edge_tower) {
+        Node *next_node = GetAddress(cur_node->next_node.at(current_level));
 
-            if (next_node->is_edge_tower) {
-                break;
-            }
-            // Node out of place, need to reorder
-            if (!NodeLessThanEqual(next_node->kv_p.first, cur_node)) {
-                valid_structure = false;
-
-                Remove(next_node->kv_p.first, next_node->kv_p.second);
-                Insert(next_node->kv_p.first, next_node->kv_p.second);
-
-                // Validate level again
-                current_level++;
-                break;
-            }
-            cur_node = next_node;
+        if (next_node->is_edge_tower) {
+          break;
         }
+        // Node out of place, need to reorder
+        if (!NodeLessThanEqual(next_node->kv_p.first, cur_node)) {
+          valid_structure = false;
 
-        current_level--;
+          Remove(next_node->kv_p.first, next_node->kv_p.second);
+          Insert(next_node->kv_p.first, next_node->kv_p.second);
+
+          // Validate level again
+          current_level++;
+          break;
+        }
+        cur_node = next_node;
+      }
+
+      current_level--;
     }
 
     epoch_manager_.LeaveEpoch(epoch);
@@ -158,12 +154,10 @@ class SkipList {
   }
 
   /*
-   * Insert
+   * Insert() - insert a node with a given key and value into skiplist
    */
   bool Insert(const KeyType &key, const ValueType &value) {
     auto epoch = epoch_manager_.JoinEpoch();
-
-    // PrintSkipList();
 
     std::vector<Node *> parents = FindParents(key, value);
 
@@ -224,6 +218,9 @@ class SkipList {
     return true;
   }
 
+  /*
+   * ConditionalInsert() - insert based on whether or not predicate is satisfied
+   */
   bool ConditionalInsert(const KeyType &key, const ValueType &value,
                          std::function<bool(const void *)> predicate,
                          bool *predicate_satisfied) {
@@ -259,7 +256,7 @@ class SkipList {
   }
 
   /*
-   * In order to delete without worrying about delete/insert race
+   * Remove() - In order to delete without worrying about delete/insert race
    * conditions, we decided to mark the next pointers in each node
    * that is being deleted. By doing that we can check if the node
    * is being deleted and also update the pointer atomically. Additionally,
@@ -368,7 +365,10 @@ class SkipList {
     return true;
   }
 
-  // Returns the last node after the current parent that is still before the key
+  /*
+   * UpdateParent() - Returns the last node after the current parent that is
+   * still before the key
+   */
   Node *UpdateParent(Node *parent, int level, const KeyType &key,
                      const ValueType &val) {
     Node *next_node = GetAddress(parent->next_node.at(level));
@@ -379,9 +379,12 @@ class SkipList {
     return parent;
   }
 
-  // returns a vector of Nodes which come directly before the key in each level
-  // first finds the nodes which come before the key, and then will increment
-  // each until it is directly before the key/value pair
+  /*
+   * FindParents() - Returns a vector of Nodes which come directly before the
+   * key in each level
+   * first finds the nodes which come before the key, and then will increment
+   * each until it is directly before the key/value pair
+   */
   std::vector<Node *> FindParents(const KeyType &key, const ValueType &val) {
     // Node directly before the key in each level
     std::vector<Node *> parents(MAX_TOWER_HEIGHT);
@@ -424,7 +427,7 @@ class SkipList {
   }
 
   /*
-   * Search for value given key
+   * Search() - Search for value given key
    * Returns true if found, and sets value to value, else returns false
    */
   bool Search(const KeyType &key, ValueType &value) const {
@@ -452,7 +455,7 @@ class SkipList {
   }
 
   /*
-   * Search for value given key (WITH DUPLICATES)
+   * Search() - Search for value given key (WITH DUPLICATES)
    * Returns true if found, and sets value to value, else returns false
    * TODO: This function may be unnecessary, but implementing just in case
    */
@@ -505,7 +508,6 @@ class SkipList {
   void GetValue(const KeyType &search_key, std::vector<ValueType> &value_list) {
     auto epoch_node = epoch_manager_.JoinEpoch();
 
-    // PrintSkipList();
     PL_ASSERT(IsSorted());
 
     auto curr_node = FindNode(search_key);
@@ -545,9 +547,8 @@ class SkipList {
   }
 
   /*
-   * Find node with largest key such that node.key <= key
+   * FindNode() - Find node with largest key such that node.key <= key
    * If duplicates, returns largest key such that node.key < key
-   * TODO: Check correctness of inner while loop
    */
   Node *FindNode(const KeyType &key) const {
     auto curr_tower = root_;
@@ -592,7 +593,7 @@ class SkipList {
   }
 
   /*
-   * Exists
+   * Exists() - Returns true if a key exists in skip list, false otherwise
    */
   bool Exists(const KeyType &key) const {
     ValueType dummy_value;
@@ -608,7 +609,7 @@ class SkipList {
   }
 
   /*
-   * Returns root of SkipList
+   * GetRoot() - Returns root of SkipList
    */
   inline Node *GetRoot() { return root_; }
 
@@ -625,12 +626,13 @@ class SkipList {
   void PerformGarbageCollection() { epoch_manager_.PerformGarbageCollection(); }
 
   /*
-   * GetEpochManager()
+   * GetEpochManager() - returns epoch manager for skip list (also used for
+   * testing purposes)
    */
   EpochManager<Node> &GetEpochManager() { return epoch_manager_; }
 
   /*
-   * CreateNode() TODO: remove (only used for testing purposes right now)
+   * CreateNode() - used for testing purposes only
    */
   Node *CreateNode() {
     Node *cur_node = new Node{};
@@ -641,7 +643,7 @@ class SkipList {
   }
 
   /*
-   * Prints contents of tree
+   * PrintSkipList() - Prints contents of tree
    * NOT thread or epoch safe
    */
   void PrintSkipList() {
@@ -659,6 +661,10 @@ class SkipList {
     LOG_INFO("------ End Tower ------\n");
   }
 
+  /*
+   * GetMemoryFootprint() - Returns heap footprint
+   * (size of nodes in skiplist plus footprint of epoch manager)
+   */
   size_t GetMemoryFootprint() {
     // If skiplist has been freed, return 0
     if (GetRoot() == nullptr) return 0;
@@ -678,10 +684,6 @@ class SkipList {
     size++;
 
     epoch_manager_.LeaveEpoch(epoch_node);
-    LOG_INFO("Node count: %zu", size);
-    LOG_INFO("Size of nodes: %zu", size * sizeof(Node));
-    //    LOG_INFO("Size of epoch manager nodes: %zu",
-    //    epoch_manager_.GetMemoryFootprint());
 
     return size * sizeof(Node) + epoch_manager_.GetMemoryFootprint();
   }
@@ -692,7 +694,7 @@ class SkipList {
   ///////////////////////////////////////////////////////////////////
 
   /*
-   * Masks the pointer so the 49th bit is 1
+   * MaskPointer() - Masks the pointer so the 49th bit is 1
    */
   inline Node *MaskPointer(Node *ptr) {
     intptr_t intp = reinterpret_cast<intptr_t>(ptr);
@@ -701,7 +703,7 @@ class SkipList {
   }
 
   /*
-   * Unmasks the pointer so the 49th bit is 0
+   * UnmaskPointer() - Unmasks the pointer so the 49th bit is 0
    */
   inline Node *UnmaskPointer(Node *ptr) {
     intptr_t intp = reinterpret_cast<intptr_t>(ptr);
@@ -709,21 +711,25 @@ class SkipList {
     return reinterpret_cast<Node *>(intp);
   }
 
-  // Returns true if node is logically deleted
+  /*
+   * IsLogicalDeleted() - Returns true if node is logically deleted
+   */
   static inline bool IsLogicalDeleted(Node *ptr) {
     intptr_t intp = reinterpret_cast<intptr_t>(ptr);
     return (intp & POINTER_MASK) > 0;
   }
 
   /*
-   * Returns whether the pointer has been masked
+   * IsMarked() - Returns whether the pointer has been masked
    */
   inline bool IsMarked(Node *ptr) {
     intptr_t intp = reinterpret_cast<intptr_t>(ptr);
     return (intp & POINTER_MASK) > 0;
   }
 
-  // Returns address of a possibly deleted node
+  /*
+   * GetAddress() - Returns address of a possibly deleted node
+   */
   static inline Node *GetAddress(Node *ptr) {
     intptr_t intp = reinterpret_cast<intptr_t>(ptr);
     if (intp > POINTER_MASK) {
@@ -733,21 +739,22 @@ class SkipList {
   }
 
   /*
-   * Returns whether the node is equal to the key
+   * NodeEqual() - Returns whether the node is equal to the key
    */
   inline bool NodeEqual(KeyType key, Node *node) {
     return (!node->is_edge_tower && key_cmp_equal(node->kv_p.first, key));
   }
 
   /*
-   * Returns whether the node is equal to the key value pair
+   * NodeEqual() - Returns whether the node is equal to the key value pair
    */
   inline bool NodeEqual(KeyType key, ValueType value, Node *node) {
     return (!node->is_edge_tower && key_cmp_equal(node->kv_p.first, key) &&
             value_cmp_equal(node->kv_p.second, value));
   }
   /*
-   * Returns true if node is not end tower and node.key < key or
+   * NodeLessThan() - Returns true if node is not end tower and node.key < key
+   * or
    * node.key = key and node.value != value (only if duplicates supported)
    */
   inline bool NodeLessThan(KeyType key, ValueType value, Node *node) const {
@@ -758,26 +765,30 @@ class SkipList {
   }
 
   /*
-   * Returns true if node is not end tower and node.key < key
+   * NodeLessThan() - Returns true if node is not end tower and node.key < key
    */
   inline bool NodeLessThan(KeyType key, Node *node) const {
     return (!node->is_edge_tower && key_cmp_less(node->kv_p.first, key));
   }
 
   /*
-   * Returns true if node is not end tower and node.key <= key
+   * NodeLessThanEqual() - Returns true if node is not end tower and node.key <=
+   * key
    */
   inline bool NodeLessThanEqual(KeyType key, Node *node) const {
     return (!node->is_edge_tower && key_cmp_less_equal(key, node->kv_p.first));
   }
 
   /*
-   * Returns true if node is end tower or node.key > key
+   * NodeGreaterThan() - Returns true if node is end tower or node.key > key
    */
   inline bool NodeGreaterThan(KeyType key, Node *node) const {
     return (node->is_edge_tower || key_cmp_greater(key, node->kv_p.first));
   }
 
+  /*
+   * IsSorted() - returns whether or not the skiplist is sorted
+   */
   bool IsSorted() {
     auto node = GetAddress(root_);
     PL_ASSERT(node->is_edge_tower);
@@ -853,12 +864,6 @@ class SkipList {
 
    public:
     /*
-     * Default Constructor
-     * TODO: May not be needed
-     */
-    // ForwardIterator(){};
-
-    /*
      * Constructor given a SkipList
      */
     ForwardIterator(SkipList *skip_list) {
@@ -876,8 +881,8 @@ class SkipList {
      * Constructor - Construct an iterator given a key
      *
      * The iterator returned will points to a data item whose key is greater
-     *than
-     * or equal to the given start key. If such key does not exist then it will
+     * than or equal to the given start key.
+     * If such key does not exist then it will
      * be the smallest key that is greater than start_key
      */
     ForwardIterator(SkipList *skip_list, const KeyType &start_key) {
@@ -913,29 +918,17 @@ class SkipList {
       curr_node_ = node;
 
       // Leave epoch
-      // TODO: Why shouldnt we leave the epoch upon destruction?
       // Bw_tree does it this way
       skip_list->epoch_manager_.LeaveEpoch(epoch_node);
     }
 
     /*
-     * Copy Constructor
-     */
-    ForwardIterator(const ForwardIterator &other);
-
-    /*
-     * Move Assignment
-     */
-    ForwardIterator &operator=(ForwardIterator &&other);
-
-    /*
      * Destructor
-     * TODO: Why shouldnt we leave the epoch upon destruction?
      */
     ~ForwardIterator() { return; }
 
     /*
-     * True if End of Iterator
+     * IsEnd() - True if End of Iterator
      */
     inline bool IsEnd() {
       if (curr_node_ == nullptr) {
@@ -972,7 +965,7 @@ class SkipList {
       if (IsEnd()) {
         return *this;
       } else {
-        step_forward();
+        StepForward();
         return *this;
       }
     }
@@ -984,14 +977,13 @@ class SkipList {
 
     /*
      * Postfix operator++
-     * TODO: Maybe remove the '*', i was getting a linker error without it
      */
     inline ForwardIterator *operator++(int) {
       if (IsEnd()) {
         return this;
       } else {
         auto temp = this;
-        step_forward();
+        StepForward();
         return temp;
       }
     }
@@ -1016,7 +1008,7 @@ class SkipList {
     /*
      * Step forward one in skip list
      */
-    void step_forward() {
+    void StepForward() {
       PL_ASSERT(!curr_node_->is_edge_tower);
 
       curr_node_ = GetAddress(curr_node_->next_node[0]);
@@ -1075,16 +1067,28 @@ class EpochManager {
   constexpr static int GC_INTERVAL = 50;
 
  public:
+  /*
+   * GarbageNode - node in a linked list of deleted nodes
+   * waiting to be GCed
+   */
   struct GarbageNode {
     GarbageNode *next_ptr;
     const NodeType *node_ptr;
   };
 
+  /*
+   * EpochNode - node in linked list representing the list of
+   * epochs
+   */
   struct EpochNode {
     std::atomic<int> active_thread_count;
     std::atomic<GarbageNode *> garbage_list_ptr;
   };
 
+  /*
+   * PrintEpochNodeList() - Prints out information regarding the current epoch
+   * node list
+   */
   void PrintEpochNodeList() {
     auto count = 1;
     for (auto node_itr = epoch_node_list_.begin();
@@ -1096,6 +1100,11 @@ class EpochManager {
     }
   }
 
+  /*
+   * GetMemoryFootprint() - Returns heap footprint of EpochManager
+   * (size of nodes in garbage lists +
+   * the sizes of the epoch nodes and garbage nodes)
+   */
   size_t GetMemoryFootprint() {
     auto epoch_node_count = 0;
     auto garbage_node_count = 0;
@@ -1117,6 +1126,9 @@ class EpochManager {
            garbage_node_count * sizeof(NodeType);
   }
 
+  /*
+   * GetEpochNodeList() - returns the current epoch node list
+   */
   std::forward_list<EpochNode *> &GetEpochNodeList() {
     return epoch_node_list_;
   }
@@ -1136,24 +1148,15 @@ class EpochManager {
     epoch_node_list_.push_front(epoch_node);
     cur_epoch_node_itr_ = epoch_node_list_.begin();
 
-    thread_ptr_ = nullptr;
     exited_flag_.store(false);
   }
 
   /*
    * Destructor
    */
-
   ~EpochManager() {
     // Set stop flag and let thread terminate
     exited_flag_.store(true);
-
-    if (thread_ptr_ != nullptr) {
-      LOG_TRACE("Waiting for thread");
-      thread_ptr_->join();
-      thread_ptr_.reset();
-      LOG_TRACE("Thread Stops");
-    }
 
     cur_epoch_node_itr_ = epoch_node_list_.end();
 
@@ -1180,7 +1183,8 @@ class EpochManager {
   }
 
   /*
-   * CreateNewEpoch()
+   * CreateNewEpoch() - Creates a new epoch node and increments the current
+   * epoch
    */
   void CreateNewEpoch() {
     auto epoch_node_ptr = new EpochNode{};
@@ -1217,11 +1221,9 @@ class EpochManager {
   }
 
   /*
-   * AddGarbageNode()
+   * AddGarbageNode() - Adds a node to the current epoch's garbage list
    */
   void AddGarbageNode(const NodeType *node_ptr) {
-    // TODO: Shouldn't this code be inside the while(1)
-
     while (1) {
       auto cur_epoch_node = *cur_epoch_node_itr_;
       GarbageNode *garbage_node_ptr = new GarbageNode;
@@ -1239,14 +1241,15 @@ class EpochManager {
   }
 
   /*
-   * LeaveEpoch()
+   * LeaveEpoch() - Decrements epoch thread count by 1
    */
   inline void LeaveEpoch(EpochNode *epoch_ptr) {
     epoch_ptr->active_thread_count.fetch_sub(1);
   }
 
   /*
-   * ClearEpoch()
+   * ClearEpoch() - Frees memory for all deleted nodes in the head epoch
+   * (if the head epoch isn't the current epoch)
    */
   void ClearEpoch() {
     LOG_DEBUG("Clearing Epoch");
@@ -1291,46 +1294,18 @@ class EpochManager {
   }
 
   /*
-   * PerformGarbageCollection()
+   * PerformGarbageCollection() - First creates a new epoch and then GCs all
+   * nodes in the head epoch
    */
   void PerformGarbageCollection() {
     CreateNewEpoch();
     ClearEpoch();
   }
 
-  /*
-   * ThreadFunc()
-   * TODO: not sure if we need this if GC is invoked for us
-   */
-  void ThreadFunc() {
-    while (!exited_flag_.load()) {
-      PerformGarbageCollection();
-
-      // Sleep
-      std::chrono::milliseconds duration(GC_INTERVAL);
-      std::this_thread::sleep_for(duration);
-    }
-    LOG_TRACE("exit flag is true; thread return");
-  }
-
-  /*
-   * StartThread()
-   * TODO: not sure if we need this if GC is invoked for us
-   */
-  void StartThread() {
-    thread_ptr_ = new std::thread{[this]() { this->ThreadFunc(); }};
-  }
-
  private:
   std::forward_list<EpochNode *> epoch_node_list_;
   typename std::forward_list<EpochNode *>::iterator cur_epoch_node_itr_;
   std::atomic<bool> exited_flag_;
-
-  // If GC is done with external thread then this should be set
-  // to nullptr
-  // Otherwise it points to a thread created by EpochManager internally
-  // TODO: may not need this if GC is invoked for us
-  std::unique_ptr<std::thread> thread_ptr_;
 };
 
 }  // namespace index

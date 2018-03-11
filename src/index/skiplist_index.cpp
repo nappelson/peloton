@@ -11,6 +11,8 @@
 //===----------------------------------------------------------------------===//
 #include "index/skiplist_index.h"
 
+#include <stack>
+
 #include "index/index_key.h"
 #include "index/scan_optimizer.h"
 #include "settings/setting_id.h"
@@ -44,7 +46,7 @@ SKIPLIST_INDEX_TYPE::~SkipListIndex() {}
  */
 SKIPLIST_TEMPLATE_ARGUMENTS
 bool SKIPLIST_INDEX_TYPE::DoIntegrityCheck() {
-    return container.DoIntegrityCheck();
+  return container.DoIntegrityCheck();
 }
 
 /*
@@ -205,25 +207,61 @@ void SKIPLIST_INDEX_TYPE::ScanLimit(
     UNUSED_ATTRIBUTE std::vector<ValueType> &result,
     UNUSED_ATTRIBUTE const ConjunctionScanPredicate *csp_p,
     UNUSED_ATTRIBUTE uint64_t limit, UNUSED_ATTRIBUTE uint64_t offset) {
-  if (!csp_p->IsPointQuery() && limit == 1 && offset == 0) {
+  if (scan_direction == ScanDirectionType::INVALID) {
+    throw Exception("Invalid scan direction \n");
+  }
+
+  if (csp_p->IsPointQuery()) {
+    return Scan(value_list, tuple_column_id_list, expr_list, scan_direction,
+                result, csp_p);
+  } else {
     const auto low_key_p = csp_p->GetLowKey();
     const auto high_key_p = csp_p->GetHighKey();
-
-    LOG_TRACE("ScanLimit() special case (limit = 1; offset = 0; ASCENDING): %s",
-              low_key_p->GetInfo().c_str());
 
     KeyType index_low_key;
     KeyType index_high_key;
     index_low_key.SetFromKey(low_key_p);
     index_high_key.SetFromKey(high_key_p);
 
-    auto scan_itr = container.Begin(index_low_key);
-    if (!scan_itr.IsEnd() &&
-        container.key_cmp_less_equal(scan_itr->first, index_high_key)) {
-      result.push_back(scan_itr->second);
+    if (limit == 1 && offset == 0) {
+      // grab the one element
+      LOG_TRACE(
+          "ScanLimit() special case (limit = 1; offset = 0; ASCENDING): %s",
+          low_key_p->GetInfo().c_str());
+      auto scan_itr = container.Begin(index_low_key);
+      if (!scan_itr.IsEnd() &&
+          container.key_cmp_less_equal(scan_itr->first, index_high_key)) {
+        result.push_back(scan_itr->second);
+      }
+    } else if (scan_direction == ScanDirectionType::FORWARD) {
+      // only insert "limit" values (starting at offset into scan)
+      auto count = 0;
+      for (auto scan_itr = container.Begin(index_low_key);
+           !scan_itr.IsEnd() &&
+               container.key_cmp_less_equal(scan_itr->first, index_high_key);
+           scan_itr++) {
+        count++;
+        if ((count >= offset) && count <= (offset + limit)) {
+          result.push_back(scan_itr->second);
+        }
+      }
     } else {
-      Scan(value_list, tuple_column_id_list, expr_list, scan_direction, result,
-           csp_p);
+      // Push values onto stack and pop off (limit amounts starting at offset)
+      auto result_stack = std::stack<peloton::ItemPointer *>();
+      for (auto scan_itr = container.Begin(index_low_key);
+           !scan_itr.IsEnd() &&
+               container.key_cmp_less_equal(scan_itr->first, index_high_key);
+           scan_itr++) {
+        result_stack.push(scan_itr->second);
+      }
+      auto count = 0;
+      while (!result_stack.empty()) {
+        count++;
+        if ((count >= offset) && count <= (offset + limit)) {
+          result.push_back(result_stack.top());
+          result_stack.pop();
+        }
+      }
     }
   }
 }
